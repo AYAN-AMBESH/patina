@@ -1,4 +1,4 @@
-use ratatui::{layout::Layout, widgets::Widget};
+use ratatui::{layout::Layout, macros::text, widgets::Widget};
 
 pub struct WidgetList<T> {
     children: Vec<T>,
@@ -44,5 +44,20 @@ impl<L: Widget, R: Widget> Widget for Either<L, R> {
             Either::Left(l) => l.render(area, buf),
             Either::Right(r) => r.render(area, buf),
         }
+    }
+}
+
+pub struct Separator(pub char);
+
+impl Widget for Separator {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let text: String = std::iter::repeat_n(self.0, area.width as usize).collect();
+
+        let text = text![text];
+
+        text.render(area, buf);
     }
 }

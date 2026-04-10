@@ -1,5 +1,8 @@
 use std::{
-    sync::{Arc, Mutex, atomic::AtomicBool},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{sleep, spawn},
     time::Duration,
 };
@@ -13,8 +16,10 @@ use ratatui::{
 
 use crate::application::{
     component::RichContext,
-    utils::Either::{Left, Right},
-    utils::WidgetList,
+    utils::{
+        Either::{Left, Right},
+        Separator, WidgetList,
+    },
 };
 
 use super::component::{Component, Message};
@@ -169,10 +174,10 @@ impl Component for HomeData {
                     ),
                     blocks,
                 )),
-                constraint!(== available.list.len() as u16),
+                constraint!(*= available.list.len() as u16),
             )
         } else {
-            let text = "There are no connections";
+            let text = "There are no access points available";
             let text = text![line![text].centered()];
 
             (
@@ -186,10 +191,29 @@ impl Component for HomeData {
 
         drop(available);
 
-        let [c_area, a_area] =
-            Layout::vertical([connected_constraint, available_constraint]).areas(frame.area());
+        let scanning_text = if self.scanning.load(Ordering::Relaxed) {
+            " [+] Scanning ..."
+        } else {
+            " [-] Scanned     "
+        };
+
+        let (separator, separator_constraint) = (
+            WidgetList::new(
+                Layout::horizontal(constraints![*= 0, == scanning_text.len() as u16]),
+                [Right(Separator('/')), Left(text![scanning_text])],
+            ),
+            constraint!(== 1),
+        );
+
+        let [c_area, s_area, a_area] = Layout::vertical([
+            connected_constraint,
+            separator_constraint,
+            available_constraint,
+        ])
+        .areas(frame.area());
 
         frame.render_widget(connected_widget, c_area);
+        frame.render_widget(separator, s_area);
         frame.render_widget(available_widget, a_area);
     }
 }
