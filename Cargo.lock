@@ -988,6 +988,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dirs",
+ "either",
  "enum_dispatch",
  "env_logger",
  "log",

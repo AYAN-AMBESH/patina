@@ -13,6 +13,7 @@ use crate::application::{
 
 pub mod component;
 mod home;
+pub mod utils;
 
 pub use component::Context;
 
