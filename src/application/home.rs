@@ -3,15 +3,17 @@ use std::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
-    thread::{sleep, spawn},
-    time::Duration,
+    thread::spawn,
 };
 
-use poppingboba::spinner::{Spinner, SpinnerType};
+use poppingboba::{
+    help::{HelpTable, HelpWidget},
+    spinner::{Spinner, SpinnerType},
+};
 use ratatui::{
     layout::Layout,
     macros::{constraint, constraints, line, text},
-    widgets::Paragraph,
+    widgets::{Paragraph, Widget},
 };
 
 use crate::application::{
@@ -30,6 +32,51 @@ pub struct HomeData {
     connected: Arc<Mutex<Connected>>,
     available: Arc<Mutex<Available>>,
     selected: Selected,
+}
+
+enum Help {
+    Connected,
+    Available,
+}
+
+impl Widget for Help {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        match self {
+            Help::Connected => {
+                let w = HelpWidget::new(HelpTable::new(
+                    [
+                        ("quit", ("q", "quit").into()),
+                        ("nav", ("j/k", "navigate").into()),
+                        ("con", ("enter", "disconnect").into()),
+                        ("tab", ("tab", "move to access points").into()),
+                        ("scan", ("s", "force scan").into()),
+                    ],
+                    &["nav", "con", "scan", "quit"],
+                    (&[], 0),
+                ));
+
+                w.render(area, buf);
+            }
+            Help::Available => {
+                let w = HelpWidget::new(HelpTable::new(
+                    [
+                        ("quit", ("q", "quit").into()),
+                        ("nav", ("j/k", "navigate").into()),
+                        ("con", ("enter", "connect").into()),
+                        ("tab", ("tab", "move to connections").into()),
+                        ("scan", ("s", "force scan").into()),
+                    ],
+                    &["nav", "con", "scan", "quit"],
+                    (&[], 0),
+                ));
+
+                w.render(area, buf);
+            }
+        }
+    }
 }
 
 struct Connected {
@@ -52,6 +99,102 @@ enum Selected {
     Connected(usize),
     Available(usize),
     None,
+}
+
+impl Selected {
+    fn down(&self, con_len: usize, avail_len: usize) -> Self {
+        match self {
+            Selected::Connected(idx) => {
+                let next = idx + 1;
+                if next == con_len {
+                    Self::Available(0)
+                } else {
+                    Self::Connected(next)
+                }
+            }
+            Selected::Available(idx) => {
+                let next = idx + 1;
+                if next == avail_len {
+                    Self::Available(*idx)
+                } else {
+                    Self::Available(next)
+                }
+            }
+            Selected::None => {
+                if con_len > 0 {
+                    Self::Connected(0)
+                } else if avail_len > 0 {
+                    Self::Available(0)
+                } else {
+                    Self::None
+                }
+            }
+        }
+    }
+
+    fn up(&self, con_len: usize, _avail_len: usize) -> Self {
+        match self {
+            Selected::Connected(idx) => {
+                if *idx == 0 {
+                    Self::None
+                } else {
+                    Self::Connected(idx - 1)
+                }
+            }
+            Selected::Available(idx) => {
+                let idx = *idx;
+                if idx == 0 && con_len != 0 {
+                    Self::Connected(con_len - 1)
+                } else if idx == 0 && con_len == 0 {
+                    Self::None
+                } else {
+                    Self::Available(idx - 1)
+                }
+            }
+            Selected::None => Self::None,
+        }
+    }
+
+    fn tab(&self, con_len: usize, avail_len: usize) -> Self {
+        match self {
+            Selected::Connected(idx) => {
+                if avail_len == 0 {
+                    Self::Connected(*idx)
+                } else {
+                    Self::Available(0)
+                }
+            }
+            Selected::Available(idx) => {
+                if con_len == 0 {
+                    Self::Available(*idx)
+                } else {
+                    Self::Connected(0)
+                }
+            }
+            Selected::None => {
+                if con_len != 0 {
+                    Self::Connected(0)
+                } else if avail_len != 0 {
+                    Self::Available(0)
+                } else {
+                    Self::None
+                }
+            }
+        }
+    }
+
+    fn connected_selected(&self) -> Option<usize> {
+        match self {
+            Selected::Connected(idx) => Some(*idx),
+            _ => None,
+        }
+    }
+    fn available_selected(&self) -> Option<usize> {
+        match self {
+            Selected::Available(idx) => Some(*idx),
+            _ => None,
+        }
+    }
 }
 
 impl HomeData {
@@ -104,8 +247,31 @@ impl HomeData {
 impl Component for HomeData {
     fn update(&mut self, _ctx: &RichContext, ev: Message) {
         match ev {
-            Message::Crossterm(..) => {
-                // noop
+            Message::Crossterm(ev) => {
+                match ev {
+                    ratatui::crossterm::event::Event::Key(key_event)
+                        if key_event.code.is_char('j') =>
+                    {
+                        let con_len = self.connected.lock().unwrap().list.len();
+                        let avail_len = self.available.lock().unwrap().list.len();
+                        self.selected = self.selected.down(con_len, avail_len);
+                    }
+                    ratatui::crossterm::event::Event::Key(key_event)
+                        if key_event.code.is_char('k') =>
+                    {
+                        let con_len = self.connected.lock().unwrap().list.len();
+                        let avail_len = self.available.lock().unwrap().list.len();
+                        self.selected = self.selected.up(con_len, avail_len);
+                    }
+                    ratatui::crossterm::event::Event::Key(key_event) if key_event.code.is_tab() => {
+                        let con_len = self.connected.lock().unwrap().list.len();
+                        let avail_len = self.available.lock().unwrap().list.len();
+                        self.selected = self.selected.tab(con_len, avail_len);
+                    }
+                    _ => {
+                        // noop
+                    }
+                }
             }
             Message::GlobalTick => {
                 let mut spinner = self.loading.lock().unwrap();
@@ -137,10 +303,15 @@ impl Component for HomeData {
 
         let connected = self.connected.lock().unwrap();
         let (connected_widget, connected_constraint) = if !connected.list.is_empty() {
-            let blocks = connected
-                .list
-                .iter()
-                .map(|item| Paragraph::new(text![item.ssid.clone()]));
+            let con_sel = self.selected.connected_selected();
+            let blocks = connected.list.iter().enumerate().map(|(idx, item)| {
+                let selected = con_sel.is_some_and(|sel| sel == idx);
+                if selected {
+                    Paragraph::new(line!["> ", item.ssid.clone()])
+                } else {
+                    Paragraph::new(line!["  ", item.ssid.clone()])
+                }
+            });
 
             (
                 Left(WidgetList::new(
@@ -162,10 +333,15 @@ impl Component for HomeData {
 
         let available = self.available.lock().unwrap();
         let (available_widget, available_constraint) = if !available.list.is_empty() {
-            let blocks = available
-                .list
-                .iter()
-                .map(|item| Paragraph::new(text![item.ssid.clone()]));
+            let avail_sel = self.selected.available_selected();
+            let blocks = available.list.iter().enumerate().map(|(idx, item)| {
+                let selected = avail_sel.is_some_and(|sel| sel == idx);
+                if selected {
+                    Paragraph::new(line!["> ", item.ssid.clone()])
+                } else {
+                    Paragraph::new(line!["  ", item.ssid.clone()])
+                }
+            });
 
             (
                 Left(WidgetList::new(
@@ -205,15 +381,23 @@ impl Component for HomeData {
             constraint!(== 1),
         );
 
-        let [c_area, s_area, a_area] = Layout::vertical([
+        let help = match self.selected {
+            Selected::Connected(_) => Help::Connected,
+            Selected::Available(_) => Help::Available,
+            Selected::None => Help::Connected,
+        };
+
+        let [c_area, s_area, a_area, h_area] = Layout::vertical([
             connected_constraint,
             separator_constraint,
             available_constraint,
+            constraint!(== 1),
         ])
         .areas(frame.area());
 
         frame.render_widget(connected_widget, c_area);
         frame.render_widget(separator, s_area);
         frame.render_widget(available_widget, a_area);
+        frame.render_widget(help, h_area);
     }
 }
