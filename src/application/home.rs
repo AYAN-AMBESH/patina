@@ -1,9 +1,12 @@
 use std::{
+    borrow::Cow,
+    rc::Rc,
     sync::{
         Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread::spawn,
+    time::Duration,
 };
 
 use poppingboba::{
@@ -11,13 +14,15 @@ use poppingboba::{
     spinner::{Spinner, SpinnerType},
 };
 use ratatui::{
-    layout::Layout,
-    macros::{constraint, constraints, line, text},
-    widgets::{Paragraph, Widget},
+    layout::{Layout, Rect},
+    macros::{constraint, constraints, line, span, text},
+    style::Style,
+    widgets::{Block, Borders, Paragraph, Widget},
 };
 
 use crate::application::{
     component::RichContext,
+    theme::PATINA,
     utils::{
         Either::{Left, Right},
         Separator, WidgetList,
@@ -32,6 +37,152 @@ pub struct HomeData {
     connected: Arc<Mutex<Connected>>,
     available: Arc<Mutex<Available>>,
     selected: Selected,
+}
+
+type CowStr = Cow<'static, str>;
+
+enum ConnectionData {
+    WifiActive {
+        strength: f32,
+        name: CowStr,
+        interface: CowStr,
+        ip: CowStr,
+        frequency: CowStr,
+        link_speed: CowStr,
+        versions: CowStr,
+    },
+    WiredActive {
+        interface: CowStr,
+        ip: CowStr,
+        name: CowStr,
+        versions: CowStr,
+    },
+    WifiInactive {
+        name: CowStr,
+        last_used: Duration,
+        autoconnect: bool,
+        metered: bool,
+        tag: CowStr,
+    },
+}
+
+struct ConnectionItem<'a> {
+    pub data: &'a ConnectionData,
+    pub selected: bool,
+}
+
+struct ConnectionsHeader {
+    pub saved_count: u64,
+    pub active_count: u64,
+}
+
+struct Header {
+    pub hostname: Cow<'static, str>,
+    // TODO: make a status enum based on nm connectivity status, update real-time
+    pub online: bool,
+    pub active_count: u64,
+    pub nm_version: Cow<'static, str>,
+}
+
+impl Widget for &ConnectionsHeader {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let title = span!(PATINA.accent; "CONNECTIONS  ");
+        let status =
+            span!(PATINA.mute; "{} saved · {} active", self.saved_count, self.active_count);
+
+        let line = line![title, status];
+
+        line.render(area, buf);
+    }
+}
+
+impl Widget for ConnectionItem<'_> {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let area = Rect {
+            height: area.height - 1,
+            ..area
+        };
+
+        let block = Block::new();
+        let block = if self.selected {
+            block
+                .borders(Borders::LEFT)
+                .border_style(PATINA.accent)
+                .style(Style::new().bg(PATINA.bg_alt))
+        } else {
+            block.borders(Borders::LEFT).border_style(PATINA.bg)
+        };
+
+        block.render(area, buf);
+
+        // essentially a left-only margin of 2 points
+        let margin = 4;
+        let area = Rect {
+            x: area.x + margin,
+            width: area.width - margin,
+            ..area
+        };
+
+        match self.data {
+            ConnectionData::WifiActive {
+                strength,
+                name,
+                interface,
+                ip,
+                frequency,
+                link_speed,
+                versions,
+            } => {
+                let strength = span!(PATINA.dim;"{}%  ", strength.round() as u32);
+                let name = span!("{}", name);
+                let top = line![strength, name];
+
+                let bottom = line![
+                    span!(PATINA.mute; "{ip}  "),
+                    span!(PATINA.dim; "on  "),
+                    span!(PATINA.soft; "{interface} "),
+                    span!(PATINA.dim; "· {frequency} · {link_speed} · "),
+                    span!(PATINA.live; versions)
+                ];
+
+                let text = text![top, bottom];
+
+                text.render(area, buf);
+            }
+            _ => {
+                todo!("impl rest");
+            }
+        }
+    }
+}
+
+impl Widget for &Header {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let patina = span!("patina");
+        let diamond = span!(PATINA.accent; "  ◆  ");
+        let hostname = span!(PATINA.soft; self.hostname);
+        let dot = span!(PATINA.dim; "  ·  ");
+
+        let status = span!(PATINA.live; "{} · {} active", if self.online { "online" }  else {"offline"}, self.active_count);
+
+        let left = line![patina, diamond, hostname, dot, status].left_aligned();
+
+        let version = span!(PATINA.dim; self.nm_version);
+        let right = line![version].right_aligned();
+
+        // TODO: handle the case where there's not enough room, and truncation is needed
+        right.render(area, buf);
+        left.render(area, buf);
+    }
 }
 
 enum Help {
@@ -80,7 +231,7 @@ impl Widget for Help {
 }
 
 struct Connected {
-    list: Vec<ConnectedAPDetails>,
+    list: Vec<Arc<ConnectionData>>,
 }
 
 struct Available {
@@ -88,10 +239,6 @@ struct Available {
 }
 
 struct AvailableAPDetails {
-    ssid: String,
-}
-
-struct ConnectedAPDetails {
     ssid: String,
 }
 
@@ -222,13 +369,19 @@ impl HomeData {
                         ssid: format!("Access Point {i}"),
                     }));
 
-                connected
-                    .lock()
-                    .unwrap()
-                    .list
-                    .extend((0..2).map(|i| ConnectedAPDetails {
-                        ssid: format!("Connection {i}"),
-                    }));
+                connected.lock().unwrap().list.extend(
+                    (0..5)
+                        .map(|i| ConnectionData::WifiActive {
+                            strength: 85.,
+                            name: format!("Connection {i}").into(),
+                            interface: "wlan0".into(),
+                            ip: "192.168.1.8/24".into(),
+                            frequency: "5 Ghz".into(),
+                            link_speed: "650 Mbps".into(),
+                            versions: "v4+v6".into(),
+                        })
+                        .map(Arc::new),
+                );
 
                 *loading.lock().unwrap() = None;
             }
@@ -298,29 +451,42 @@ impl Component for HomeData {
             return;
         }
 
-        // free the lock
         drop(spinner);
+
+        let (header_widget, header_constraint) = (
+            Header {
+                hostname: "stacyweiss".into(),
+                online: true,
+                active_count: 2,
+                nm_version: "NM 2.23".into(),
+            },
+            constraint!(== 1),
+        );
+
+        let (header_sep_widget, header_sep_constraint) = (
+            Separator::new('\x5F').styled(PATINA.mute.into()),
+            constraint!(== 2),
+        );
 
         let connected = self.connected.lock().unwrap();
         let (connected_widget, connected_constraint) = if !connected.list.is_empty() {
             let con_sel = self.selected.connected_selected();
             let blocks = connected.list.iter().enumerate().map(|(idx, item)| {
                 let selected = con_sel.is_some_and(|sel| sel == idx);
-                if selected {
-                    Paragraph::new(line!["> ", item.ssid.clone()])
-                } else {
-                    Paragraph::new(line!["  ", item.ssid.clone()])
+                ConnectionItem {
+                    data: item,
+                    selected,
                 }
             });
 
             (
                 Left(WidgetList::new(
                     Layout::vertical(
-                        std::iter::repeat_n(1, connected.list.len()).map(|i| constraint!(== i)),
+                        std::iter::repeat_n(3, connected.list.len()).map(|i| constraint!(== i)),
                     ),
                     blocks,
                 )),
-                constraint!(== connected.list.len() as u16),
+                constraint!(== connected.list.len() as u16 * 3 ),
             )
         } else {
             let text = "There are no connections";
@@ -328,8 +494,6 @@ impl Component for HomeData {
 
             (Right(text), constraint!(== 3))
         };
-
-        drop(connected);
 
         let available = self.available.lock().unwrap();
         let (available_widget, available_constraint) = if !available.list.is_empty() {
@@ -376,7 +540,7 @@ impl Component for HomeData {
         let (separator, separator_constraint) = (
             WidgetList::new(
                 Layout::horizontal(constraints![*= 0, == scanning_text.len() as u16]),
-                [Right(Separator('/')), Left(text![scanning_text])],
+                [Right(Separator::new('/')), Left(text![scanning_text])],
             ),
             constraint!(== 1),
         );
@@ -387,7 +551,9 @@ impl Component for HomeData {
             Selected::None => Help::Connected,
         };
 
-        let [c_area, s_area, a_area, h_area] = Layout::vertical([
+        let [header_area, hs_area, c_area, s_area, a_area, h_area] = Layout::vertical([
+            header_constraint,
+            header_sep_constraint,
             connected_constraint,
             separator_constraint,
             available_constraint,
@@ -395,6 +561,8 @@ impl Component for HomeData {
         ])
         .areas(frame.area());
 
+        frame.render_widget(&header_widget, header_area);
+        frame.render_widget(header_sep_widget, hs_area);
         frame.render_widget(connected_widget, c_area);
         frame.render_widget(separator, s_area);
         frame.render_widget(available_widget, a_area);

@@ -1,4 +1,9 @@
-use ratatui::{layout::Layout, macros::text, widgets::Widget};
+use ratatui::{
+    layout::Layout,
+    macros::{span, text},
+    style::Style,
+    widgets::Widget,
+};
 
 pub struct WidgetList<T> {
     children: Vec<T>,
@@ -47,16 +52,35 @@ impl<L: Widget, R: Widget> Widget for Either<L, R> {
     }
 }
 
-pub struct Separator(pub char);
+pub struct Separator {
+    pub char: char,
+    pub style: Style,
+}
+
+impl Separator {
+    pub const fn new(c: char) -> Self {
+        Self {
+            char: c,
+            style: Style::new(),
+        }
+    }
+
+    pub const fn styled(self, style: Style) -> Self {
+        Self {
+            char: self.char,
+            style,
+        }
+    }
+}
 
 impl Widget for Separator {
     fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
     where
         Self: Sized,
     {
-        let text: String = std::iter::repeat_n(self.0, area.width as usize).collect();
+        let text: String = std::iter::repeat_n(self.char, area.width as usize).collect();
 
-        let text = text![text];
+        let text = span![self.style; text];
 
         text.render(area, buf);
     }
