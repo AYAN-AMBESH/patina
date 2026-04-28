@@ -179,9 +179,9 @@ impl Widget for ConnectionItem<'_> {
 
                 let bottom = line![
                     span!(PATINA.mute; "{ip}  "),
-                    span!(PATINA.dim; "on  "),
+                    span!(PATINA.dim; "on "),
                     span!(PATINA.soft; "{interface} "),
-                    span!(PATINA.dim; "· {frequency} · {link_speed} · "),
+                    span!(PATINA.mute; "· {frequency} · {link_speed} · "),
                     span!(PATINA.live; versions)
                 ];
 
@@ -202,7 +202,7 @@ impl Widget for ConnectionItem<'_> {
 
                 let bottom = line![
                     span!(PATINA.mute; "{ip}  "),
-                    span!(PATINA.dim; "on  "),
+                    span!(PATINA.dim; "on "),
                     span!(PATINA.soft; "{interface} "),
                     span!(PATINA.dim; "· "),
                     span!(PATINA.live; versions)
@@ -218,21 +218,25 @@ impl Widget for ConnectionItem<'_> {
                 metered,
                 tag,
             } => {
-                let kind = span!(PATINA.accent; "wifi  ");
+                let kind = span!(PATINA.fg_alt; "wifi  ");
                 let name = span!("{}", name);
                 let top_left = line![kind, name].left_aligned();
 
                 let tag = span!(PATINA.dim; tag);
                 let top_right = line![tag].right_aligned();
 
-                let used_label = span!(PATINA.dim; "used ");
-                let used_val = span!("{}   ", humanize_duration(*last_used));
-                let ac_label = span!(PATINA.dim; "autoconnect ");
-                let ac_val = span!("{}", if *autoconnect { "on" } else { "off" });
+                let used_label = span!(PATINA.mute; "used ");
+                let used_val = span!(PATINA.dim; "{}  ", humanize_duration(*last_used));
+                let ac_label = span!(PATINA.mute; "autoconnect ");
+                let ac_val = if *autoconnect {
+                    span!(PATINA.live; "on")
+                } else {
+                    span!(PATINA.dim; "off")
+                };
 
                 let mut bottom_spans = vec![used_label, used_val, ac_label, ac_val];
                 if *metered {
-                    bottom_spans.push(span!("   "));
+                    bottom_spans.push(span!("  "));
                     bottom_spans.push(span!(PATINA.warn; "metered"));
                 }
                 let bottom = ratatui::text::Line::from(bottom_spans);
