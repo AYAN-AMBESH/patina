@@ -1,10 +1,7 @@
 use std::{
     borrow::Cow,
     rc::Rc,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::{Arc, Mutex},
     thread::spawn,
     time::Duration,
 };
@@ -16,15 +13,15 @@ use poppingboba::{
 use ratatui::{
     layout::{Layout, Rect},
     macros::{constraint, constraints, line, span, text},
-    style::Style,
-    widgets::{Block, Paragraph, Widget},
+    style::{Color, Style},
+    widgets::{Block, Widget},
 };
 
 use crate::application::{
     component::RichContext,
     theme::PATINA,
     utils::{
-        Either::{Left, Right},
+        Either::{self, Left, Right},
         Separator, WidgetList,
     },
 };
@@ -49,11 +46,20 @@ fn humanize_duration(d: Duration) -> String {
     timeago::Formatter::new().convert(d)
 }
 
+fn strength_color(s: f32) -> Color {
+    if s >= 55.0 {
+        PATINA.live
+    } else if s >= 35.0 {
+        PATINA.warn
+    } else {
+        PATINA.danger
+    }
+}
+
 use super::component::{Component, Message};
 
 pub struct HomeData {
     loading: Arc<Mutex<Option<Spinner>>>,
-    scanning: AtomicBool,
     connected: Arc<Mutex<Connected>>,
     available: Arc<Mutex<Available>>,
     selected: Selected,
@@ -329,7 +335,108 @@ struct Available {
 }
 
 struct AvailableAPDetails {
-    ssid: String,
+    strength: f32,
+    ssid: CowStr,
+    security: CowStr,
+    frequency: CowStr,
+    channel: u32,
+    link_speed: CowStr,
+}
+
+struct AccessPointItem<'a> {
+    pub data: &'a AvailableAPDetails,
+    pub selected: bool,
+}
+
+impl Widget for AccessPointItem<'_> {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        if self.selected {
+            let edge_style = Style::new().fg(PATINA.bg_alt).bg(PATINA.bg);
+
+            let top_edge = Rect {
+                x: area.x,
+                y: area.y.saturating_sub(1),
+                width: area.width,
+                height: 1,
+            };
+            let bot_edge = Rect {
+                x: area.x,
+                y: area.y + area.height,
+                width: area.width,
+                height: 1,
+            };
+
+            Separator::new('\u{2584}')
+                .styled(edge_style)
+                .render(top_edge, buf);
+            Separator::new('\u{2580}')
+                .styled(edge_style)
+                .render(bot_edge, buf);
+
+            Block::new()
+                .style(Style::new().bg(PATINA.bg_alt))
+                .render(area, buf);
+        }
+
+        let AvailableAPDetails {
+            strength,
+            ssid,
+            security,
+            frequency,
+            channel,
+            link_speed,
+        } = self.data;
+
+        let bars = span!(strength_color(*strength); "{}  ", strength_bars(*strength));
+        let pct = span!(PATINA.dim; "{}%  ", strength.round() as u32);
+        let pad = span!("    ");
+        let name = span!("{}  ", ssid);
+        let sec = span!(PATINA.dim; security);
+
+        let left = line![pad, bars, pct, name, sec].left_aligned();
+
+        let right = line![span!(PATINA.mute; "{frequency} · ch {channel} · {link_speed}")]
+            .right_aligned();
+
+        let style = if self.selected {
+            Style::new().bg(PATINA.bg_alt)
+        } else {
+            Style::new()
+        };
+
+        right.style(style).render(area, buf);
+        left.style(style).render(area, buf);
+
+        if self.selected {
+            if let Some(cell) = buf.cell_mut((area.x + 1, area.y)) {
+                cell.set_char('\u{3009}')
+                    .set_style(Style::new().fg(PATINA.accent).bg(PATINA.bg_alt));
+            }
+        }
+    }
+}
+
+struct AccessPointsHeader {
+    pub in_range: u64,
+    pub scanned_ago: CowStr,
+}
+
+impl Widget for &AccessPointsHeader {
+    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
+    where
+        Self: Sized,
+    {
+        let title = span!(PATINA.accent; "ACCESS POINTS  ");
+        let status =
+            span!(PATINA.mute; "{} in range · scanned {}", self.in_range, self.scanned_ago);
+
+        let line = line![title, status];
+
+        line.render(area, buf);
+    }
 }
 
 enum Selected {
@@ -438,7 +545,6 @@ impl HomeData {
     pub fn new(ctx: &RichContext) -> Self {
         let loading = Spinner::new(SpinnerType::dot(), ctx.fps);
         let loading = Arc::new(Mutex::new(Some(loading)));
-        let scanning = AtomicBool::new(false);
         let connected = Arc::new(Mutex::new(Connected { list: Vec::new() }));
         let available = Arc::new(Mutex::new(Available { list: Vec::new() }));
         let selected = Selected::None;
@@ -451,13 +557,48 @@ impl HomeData {
             move || {
                 // mock loading, uncomment to checkout loading state
                 // sleep(Duration::from_secs(5));
-                available
-                    .lock()
-                    .unwrap()
-                    .list
-                    .extend((0..=4).map(|i| AvailableAPDetails {
-                        ssid: format!("Access Point {i}"),
-                    }));
+                available.lock().unwrap().list.extend([
+                    AvailableAPDetails {
+                        strength: 82.,
+                        ssid: "Overcast-5G".into(),
+                        security: "WPA2".into(),
+                        frequency: "5.22 GHz".into(),
+                        channel: 44,
+                        link_speed: "650 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 71.,
+                        ssid: "Acme-Corp".into(),
+                        security: "WPA2-E".into(),
+                        frequency: "5.75 GHz".into(),
+                        channel: 149,
+                        link_speed: "867 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 58.,
+                        ssid: "FiberLink_9A82".into(),
+                        security: "WPA3".into(),
+                        frequency: "6.13 GHz".into(),
+                        channel: 37,
+                        link_speed: "1201 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 42.,
+                        ssid: "xfinitywifi".into(),
+                        security: "Open".into(),
+                        frequency: "2.41 GHz".into(),
+                        channel: 1,
+                        link_speed: "150 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 28.,
+                        ssid: "TP-Link_5544".into(),
+                        security: "WPA2".into(),
+                        frequency: "2.44 GHz".into(),
+                        channel: 6,
+                        link_speed: "300 Mbps".into(),
+                    },
+                ]);
 
                 let mut conns: Vec<Arc<ConnectionData>> = Vec::new();
                 conns.push(Arc::new(ConnectionData::WifiActive {
@@ -497,7 +638,6 @@ impl HomeData {
 
         Self {
             loading,
-            scanning,
             connected,
             available,
             selected,
@@ -613,25 +753,40 @@ impl Component for HomeData {
         };
 
         let available = self.available.lock().unwrap();
+        let (access_points_header_widget, access_points_header_constraint) = (
+            AccessPointsHeader {
+                in_range: available.list.len() as u64,
+                scanned_ago: "just now".into(),
+            },
+            constraint!(== 1),
+        );
+
         let (available_widget, available_constraint) = if !available.list.is_empty() {
             let avail_sel = self.selected.available_selected();
-            let blocks = available.list.iter().enumerate().map(|(idx, item)| {
+            let n = available.list.len();
+            let total_rows = (2 * n + 1) as u16;
+
+            let mut blocks: Vec<Either<AccessPointItem, Block>> =
+                Vec::with_capacity(total_rows as usize);
+            blocks.push(Right(Block::default()));
+            for (idx, item) in available.list.iter().enumerate() {
                 let selected = avail_sel.is_some_and(|sel| sel == idx);
-                if selected {
-                    Paragraph::new(line!["> ", item.ssid.clone()])
-                } else {
-                    Paragraph::new(line!["  ", item.ssid.clone()])
-                }
-            });
+                blocks.push(Left(AccessPointItem {
+                    data: item,
+                    selected,
+                }));
+                blocks.push(Right(Block::default()));
+            }
 
             (
                 Left(WidgetList::new(
                     Layout::vertical(
-                        std::iter::repeat_n(1, available.list.len()).map(|i| constraint!(== i)),
+                        std::iter::repeat_n(1u16, total_rows as usize)
+                            .map(|i| constraint!(== i)),
                     ),
                     blocks,
                 )),
-                constraint!(*= available.list.len() as u16),
+                constraint!(*= total_rows),
             )
         } else {
             let text = "There are no access points available";
@@ -646,22 +801,6 @@ impl Component for HomeData {
             )
         };
 
-        drop(available);
-
-        let scanning_text = if self.scanning.load(Ordering::Relaxed) {
-            " [+] Scanning ..."
-        } else {
-            " [-] Scanned     "
-        };
-
-        let (separator, separator_constraint) = (
-            WidgetList::new(
-                Layout::horizontal(constraints![*= 0, == scanning_text.len() as u16]),
-                [Right(Separator::new('/')), Left(text![scanning_text])],
-            ),
-            constraint!(== 1),
-        );
-
         let help = match self.selected {
             Selected::Connected(_) => Help::Connected,
             Selected::Available(_) => Help::Available,
@@ -673,7 +812,7 @@ impl Component for HomeData {
             hs_area,
             ch_area,
             c_area,
-            s_area,
+            ah_area,
             a_area,
             h_area,
         ] = Layout::vertical([
@@ -681,7 +820,7 @@ impl Component for HomeData {
             header_sep_constraint,
             connections_header_constraint,
             connected_constraint,
-            separator_constraint,
+            access_points_header_constraint,
             available_constraint,
             constraint!(== 1),
         ])
@@ -691,7 +830,7 @@ impl Component for HomeData {
         frame.render_widget(header_sep_widget, hs_area);
         frame.render_widget(&connections_header_widget, ch_area);
         frame.render_widget(connected_widget, c_area);
-        frame.render_widget(separator, s_area);
+        frame.render_widget(&access_points_header_widget, ah_area);
         frame.render_widget(available_widget, a_area);
         frame.render_widget(help, h_area);
     }
