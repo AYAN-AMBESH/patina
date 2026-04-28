@@ -17,7 +17,7 @@ use ratatui::{
     layout::{Layout, Rect},
     macros::{constraint, constraints, line, span, text},
     style::Style,
-    widgets::{Block, Borders, Paragraph, Widget},
+    widgets::{Block, Paragraph, Widget},
 };
 
 use crate::application::{
@@ -28,6 +28,8 @@ use crate::application::{
         Separator, WidgetList,
     },
 };
+
+const ITEM_HEIGHT: u16 = 4;
 
 use super::component::{Component, Message};
 
@@ -104,29 +106,42 @@ impl Widget for ConnectionItem<'_> {
     where
         Self: Sized,
     {
-        let area = Rect {
-            height: area.height - 1,
-            ..area
+        let [top_edge, text_top, text_bottom, bot_edge] =
+            Layout::vertical(constraints![== 1, == 1, == 1, == 1]).areas(area);
+
+        let text_band = Rect {
+            x: area.x,
+            y: text_top.y,
+            width: area.width,
+            height: text_top.height + text_bottom.height,
         };
 
-        let block = Block::new();
-        let block = if self.selected {
-            block
-                .borders(Borders::LEFT)
-                .border_style(PATINA.accent)
+        if self.selected {
+            let edge_style = Style::new().fg(PATINA.bg_alt).bg(PATINA.bg);
+            Separator::new('\u{2584}')
+                .styled(edge_style)
+                .render(top_edge, buf);
+            Separator::new('\u{2580}')
+                .styled(edge_style)
+                .render(bot_edge, buf);
+
+            Block::new()
                 .style(Style::new().bg(PATINA.bg_alt))
-        } else {
-            block.borders(Borders::LEFT).border_style(PATINA.bg)
-        };
+                .render(text_band, buf);
 
-        block.render(area, buf);
+            if let Some(cell) = buf.cell_mut((area.x + 1, text_top.y)) {
+                cell.set_char('\u{3009}')
+                    .set_style(Style::new().fg(PATINA.accent).bg(PATINA.bg_alt));
+            }
+        }
 
         // essentially a left-only margin of 2 points
         let margin = 4;
         let area = Rect {
-            x: area.x + margin,
-            width: area.width - margin,
-            ..area
+            x: text_band.x + margin,
+            y: text_band.y,
+            width: text_band.width - margin,
+            height: text_band.height,
         };
 
         match self.data {
@@ -482,11 +497,12 @@ impl Component for HomeData {
             (
                 Left(WidgetList::new(
                     Layout::vertical(
-                        std::iter::repeat_n(3, connected.list.len()).map(|i| constraint!(== i)),
+                        std::iter::repeat_n(ITEM_HEIGHT, connected.list.len())
+                            .map(|i| constraint!(== i)),
                     ),
                     blocks,
                 )),
-                constraint!(== connected.list.len() as u16 * 3 ),
+                constraint!(== connected.list.len() as u16 * ITEM_HEIGHT),
             )
         } else {
             let text = "There are no connections";
