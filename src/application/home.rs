@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use circular_buffer::CircularBuffer;
 use poppingboba::{
     help::{HelpTable, HelpWidget},
     spinner::{Spinner, SpinnerType},
@@ -370,12 +371,16 @@ impl HomeData {
                         frequency: "5 GHz".into(),
                         link_speed: "650 Mbps".into(),
                         versions: "v4+v6".into(),
+                        throughput: CircularBuffer::from_iter(
+                            [0, 5, 9, 14, 11, 8, 2, 13].repeat(8),
+                        ),
                     },
                     ConnectionData::WiredActive {
                         interface: "eth0".into(),
                         ip: "192.168.4.22/24".into(),
                         name: "eth0".into(),
                         versions: "v4+v6".into(),
+                        throughput: CircularBuffer::from_iter(std::iter::repeat_n(0, 16)),
                     },
                     ConnectionData::WifiInactive {
                         name: "Acme-Corp".into(),

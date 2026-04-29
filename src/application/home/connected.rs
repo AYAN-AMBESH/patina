@@ -1,16 +1,24 @@
 use std::time::Duration;
 
+use circular_buffer::CircularBuffer;
 use ratatui::{
     layout::{Layout, Rect},
-    macros::{constraint, constraints, line, span, text},
+    macros::{constraint, constraints, line, span},
     style::{Color, Style},
+    text::Line,
     widgets::{Block, Widget},
 };
 
 use crate::application::{
     theme::PATINA,
-    utils::{CowStr, Separator, WidgetList, humanize_duration, selected_scroll, strength_bars},
+    utils::{
+        BrailleSparkline, CowStr, Separator, WidgetList, humanize_duration, selected_scroll,
+        strength_bars,
+    },
 };
+
+const SPARKLINE_WIDTH: u16 = 24;
+const MIN_LEFT_WIDTH: u16 = 0;
 
 pub const ITEM_HEIGHT: u16 = 4;
 
@@ -25,12 +33,14 @@ pub enum ConnectionData {
         frequency: CowStr,
         link_speed: CowStr,
         versions: CowStr,
+        throughput: CircularBuffer<48, usize>,
     },
     WiredActive {
         interface: CowStr,
         ip: CowStr,
         name: CowStr,
         versions: CowStr,
+        throughput: CircularBuffer<48, usize>,
     },
     WifiInactive {
         name: CowStr,
@@ -135,6 +145,7 @@ impl Widget for ConnectionItem<'_> {
                 frequency,
                 link_speed,
                 versions,
+                throughput,
             } => {
                 let bars = span!(disabled_color(PATINA.live); "{}  ", strength_bars(*strength));
                 let strength = span!(disabled_color(PATINA.dim);"{}%  ", strength.round() as u32);
@@ -149,15 +160,16 @@ impl Widget for ConnectionItem<'_> {
                     span!(disabled_color(PATINA.live); versions)
                 ];
 
-                let text = text![top, bottom];
-
-                text.render(area, buf);
+                render_top_with_sparkline(area, buf, top, throughput, disabled_color(PATINA.live));
+                let [_, bottom_row] = Layout::vertical(constraints![== 1, == 1]).areas(area);
+                bottom.render(bottom_row, buf);
             }
             ConnectionData::WiredActive {
                 interface,
                 ip,
                 name,
                 versions,
+                throughput,
             } => {
                 let bars = span!(disabled_color(PATINA.live); "═══  ");
                 let name = span!(disabled_color(PATINA.fg); "{} ", name);
@@ -172,8 +184,9 @@ impl Widget for ConnectionItem<'_> {
                     span!(disabled_color(PATINA.live); versions)
                 ];
 
-                let text = text![top, bottom];
-                text.render(area, buf);
+                render_top_with_sparkline(area, buf, top, throughput, disabled_color(PATINA.live));
+                let [_, bottom_row] = Layout::vertical(constraints![== 1, == 1]).areas(area);
+                bottom.render(bottom_row, buf);
             }
             ConnectionData::WifiInactive {
                 name,
@@ -214,5 +227,27 @@ impl Widget for ConnectionItem<'_> {
                 bottom.render(bottom_area, buf);
             }
         }
+    }
+}
+
+fn render_top_with_sparkline(
+    area: Rect,
+    buf: &mut ratatui::prelude::Buffer,
+    top: Line<'_>,
+    throughput: &CircularBuffer<48, usize>,
+    spark_color: Color,
+) {
+    let [top_row, _] = Layout::vertical(constraints![== 1, == 1]).areas(area);
+
+    if top_row.width > MIN_LEFT_WIDTH + SPARKLINE_WIDTH {
+        let [left, _gap, right] =
+            Layout::horizontal(constraints![*= 1, == 1, == SPARKLINE_WIDTH]).areas(top_row);
+        top.render(left, buf);
+        let data: Vec<usize> = throughput.iter().copied().collect();
+        BrailleSparkline::new(&data)
+            .style(Style::new().fg(spark_color))
+            .render(right, buf);
+    } else {
+        top.render(top_row, buf);
     }
 }
