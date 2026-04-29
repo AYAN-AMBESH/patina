@@ -14,8 +14,10 @@ pub struct Context {
 }
 
 pub struct RichContext {
+    #[allow(unused)]
     pub log_file: PathBuf,
     pub fps: u32,
+    #[allow(unused)]
     pub message: Arc<Sender<Message>>,
 }
 

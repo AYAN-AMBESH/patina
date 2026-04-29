@@ -1,6 +1,4 @@
 use std::{
-    borrow::Cow,
-    rc::Rc,
     sync::{Arc, Mutex},
     thread::spawn,
     time::Duration,
@@ -13,48 +11,24 @@ use poppingboba::{
 use ratatui::{
     layout::{Layout, Rect},
     macros::{constraint, constraints, line, span, text},
-    style::{Color, Style},
+    style::Style,
     widgets::{Block, Widget},
 };
 
 use crate::application::{
     component::RichContext,
+    home::available::{AvailableAPDetails, AvailableList},
     theme::PATINA,
     utils::{
-        Either::{self, Left, Right},
-        Separator, WidgetList,
+        CowStr,
+        Either::{Left, Right},
+        Separator, WidgetList, humanize_duration, strength_bars,
     },
 };
 
+mod available;
+
 const ITEM_HEIGHT: u16 = 4;
-
-fn strength_bars(s: f32) -> &'static str {
-    if s >= 75.0 {
-        "▮▮▮▮"
-    } else if s >= 55.0 {
-        "▮▮▮▯"
-    } else if s >= 35.0 {
-        "▮▮▯▯"
-    } else if s >= 15.0 {
-        "▮▯▯▯"
-    } else {
-        "▯▯▯▯"
-    }
-}
-
-fn humanize_duration(d: Duration) -> String {
-    timeago::Formatter::new().convert(d)
-}
-
-fn strength_color(s: f32) -> Color {
-    if s >= 55.0 {
-        PATINA.live
-    } else if s >= 35.0 {
-        PATINA.warn
-    } else {
-        PATINA.danger
-    }
-}
 
 use super::component::{Component, Message};
 
@@ -65,8 +39,8 @@ pub struct HomeData {
     selected: Selected,
 }
 
-type CowStr = Cow<'static, str>;
-
+// TODO: remove this clone, only needed for testing
+#[derive(Clone)]
 enum ConnectionData {
     WifiActive {
         strength: f32,
@@ -98,16 +72,17 @@ struct ConnectionItem<'a> {
 }
 
 struct ConnectionsHeader {
-    pub saved_count: u64,
-    pub active_count: u64,
+    pub saved_count: usize,
+    pub active_count: usize,
+    pub selected: Option<(usize, usize)>, // (idx, total)
 }
 
 struct Header {
-    pub hostname: Cow<'static, str>,
+    pub hostname: CowStr,
     // TODO: make a status enum based on nm connectivity status, update real-time
     pub online: bool,
     pub active_count: u64,
-    pub nm_version: Cow<'static, str>,
+    pub nm_version: CowStr,
 }
 
 impl Widget for &ConnectionsHeader {
@@ -120,6 +95,15 @@ impl Widget for &ConnectionsHeader {
             span!(PATINA.mute; "{} saved · {} active", self.saved_count, self.active_count);
 
         let line = line![title, status];
+
+        if let Some((idx, total)) = self.selected {
+            let tag = span!(PATINA.mute; "selected ");
+            let page = span!(PATINA.dim; "{}", idx + 1);
+            let total = span!(PATINA.mute; "/{total}");
+
+            let line = line![tag, page, total].right_aligned();
+            line.render(area, buf);
+        }
 
         line.render(area, buf);
     }
@@ -327,96 +311,11 @@ impl Widget for Help {
 }
 
 struct Connected {
-    list: Vec<Arc<ConnectionData>>,
+    list: Vec<ConnectionData>,
 }
 
 struct Available {
     list: Vec<AvailableAPDetails>,
-}
-
-struct AvailableAPDetails {
-    strength: f32,
-    ssid: CowStr,
-    security: CowStr,
-    frequency: CowStr,
-    channel: u32,
-    link_speed: CowStr,
-}
-
-struct AccessPointItem<'a> {
-    pub data: &'a AvailableAPDetails,
-    pub selected: bool,
-}
-
-impl Widget for AccessPointItem<'_> {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
-        if self.selected {
-            let edge_style = Style::new().fg(PATINA.bg_alt).bg(PATINA.bg);
-
-            let top_edge = Rect {
-                x: area.x,
-                y: area.y.saturating_sub(1),
-                width: area.width,
-                height: 1,
-            };
-            let bot_edge = Rect {
-                x: area.x,
-                y: area.y + area.height,
-                width: area.width,
-                height: 1,
-            };
-
-            Separator::new('\u{2584}')
-                .styled(edge_style)
-                .render(top_edge, buf);
-            Separator::new('\u{2580}')
-                .styled(edge_style)
-                .render(bot_edge, buf);
-
-            Block::new()
-                .style(Style::new().bg(PATINA.bg_alt))
-                .render(area, buf);
-        }
-
-        let AvailableAPDetails {
-            strength,
-            ssid,
-            security,
-            frequency,
-            channel,
-            link_speed,
-        } = self.data;
-
-        let bars = span!(strength_color(*strength); "{}  ", strength_bars(*strength));
-        let pct = span!(PATINA.dim; "{}%  ", strength.round() as u32);
-        let pad = span!("    ");
-        let name = span!("{}  ", ssid);
-        let sec = span!(PATINA.dim; security);
-
-        let left = line![pad, bars, pct, name, sec].left_aligned();
-
-        let right = line![span!(PATINA.mute; "{frequency} · ch {channel} · {link_speed}")]
-            .right_aligned();
-
-        let style = if self.selected {
-            Style::new().bg(PATINA.bg_alt)
-        } else {
-            Style::new()
-        };
-
-        right.style(style).render(area, buf);
-        left.style(style).render(area, buf);
-
-        if self.selected {
-            if let Some(cell) = buf.cell_mut((area.x + 1, area.y)) {
-                cell.set_char('\u{3009}')
-                    .set_style(Style::new().fg(PATINA.accent).bg(PATINA.bg_alt));
-            }
-        }
-    }
 }
 
 struct AccessPointsHeader {
@@ -557,80 +456,90 @@ impl HomeData {
             move || {
                 // mock loading, uncomment to checkout loading state
                 // sleep(Duration::from_secs(5));
-                available.lock().unwrap().list.extend([
-                    AvailableAPDetails {
-                        strength: 82.,
-                        ssid: "Overcast-5G".into(),
-                        security: "WPA2".into(),
-                        frequency: "5.22 GHz".into(),
-                        channel: 44,
-                        link_speed: "650 Mbps".into(),
-                    },
-                    AvailableAPDetails {
-                        strength: 71.,
-                        ssid: "Acme-Corp".into(),
-                        security: "WPA2-E".into(),
-                        frequency: "5.75 GHz".into(),
-                        channel: 149,
-                        link_speed: "867 Mbps".into(),
-                    },
-                    AvailableAPDetails {
-                        strength: 58.,
-                        ssid: "FiberLink_9A82".into(),
-                        security: "WPA3".into(),
-                        frequency: "6.13 GHz".into(),
-                        channel: 37,
-                        link_speed: "1201 Mbps".into(),
-                    },
-                    AvailableAPDetails {
-                        strength: 42.,
-                        ssid: "xfinitywifi".into(),
-                        security: "Open".into(),
-                        frequency: "2.41 GHz".into(),
-                        channel: 1,
-                        link_speed: "150 Mbps".into(),
-                    },
-                    AvailableAPDetails {
-                        strength: 28.,
-                        ssid: "TP-Link_5544".into(),
-                        security: "WPA2".into(),
-                        frequency: "2.44 GHz".into(),
-                        channel: 6,
-                        link_speed: "300 Mbps".into(),
-                    },
-                ]);
+                available.lock().unwrap().list.extend(
+                    [
+                        AvailableAPDetails {
+                            strength: 82.,
+                            ssid: "Overcast-5G".into(),
+                            security: "WPA2".into(),
+                            frequency: "5.22 GHz".into(),
+                            channel: 44,
+                            link_speed: "650 Mbps".into(),
+                        },
+                        AvailableAPDetails {
+                            strength: 71.,
+                            ssid: "Acme-Corp".into(),
+                            security: "WPA2-E".into(),
+                            frequency: "5.75 GHz".into(),
+                            channel: 149,
+                            link_speed: "867 Mbps".into(),
+                        },
+                        AvailableAPDetails {
+                            strength: 58.,
+                            ssid: "FiberLink_9A82".into(),
+                            security: "WPA3".into(),
+                            frequency: "6.13 GHz".into(),
+                            channel: 37,
+                            link_speed: "1201 Mbps".into(),
+                        },
+                        AvailableAPDetails {
+                            strength: 42.,
+                            ssid: "xfinitywifi".into(),
+                            security: "Open".into(),
+                            frequency: "2.41 GHz".into(),
+                            channel: 1,
+                            link_speed: "150 Mbps".into(),
+                        },
+                        AvailableAPDetails {
+                            strength: 28.,
+                            ssid: "TP-Link_5544".into(),
+                            security: "WPA2".into(),
+                            frequency: "2.44 GHz".into(),
+                            channel: 6,
+                            link_speed: "300 Mbps".into(),
+                        },
+                    ]
+                    .into_iter()
+                    .cycle()
+                    .take(24),
+                );
 
-                let mut conns: Vec<Arc<ConnectionData>> = Vec::new();
-                conns.push(Arc::new(ConnectionData::WifiActive {
-                    strength: 82.,
-                    name: "Overcast-5G".into(),
-                    interface: "wlan0".into(),
-                    ip: "10.0.0.147/24".into(),
-                    frequency: "5 GHz".into(),
-                    link_speed: "650 Mbps".into(),
-                    versions: "v4+v6".into(),
-                }));
-                conns.push(Arc::new(ConnectionData::WiredActive {
-                    interface: "eth0".into(),
-                    ip: "192.168.4.22/24".into(),
-                    name: "eth0".into(),
-                    versions: "v4+v6".into(),
-                }));
-                conns.push(Arc::new(ConnectionData::WifiInactive {
-                    name: "Acme-Corp".into(),
-                    last_used: Duration::from_secs(60 * 60 * 24),
-                    autoconnect: true,
-                    metered: false,
-                    tag: "WPA2-Enterprise".into(),
-                }));
-                conns.push(Arc::new(ConnectionData::WifiInactive {
-                    name: "Pixel-Tether".into(),
-                    last_used: Duration::from_secs(60 * 60 * 24 * 14),
-                    autoconnect: false,
-                    metered: true,
-                    tag: "WPA3".into(),
-                }));
-                connected.lock().unwrap().list.extend(conns);
+                let conns = vec![
+                    ConnectionData::WifiActive {
+                        strength: 82.,
+                        name: "Overcast-5G".into(),
+                        interface: "wlan0".into(),
+                        ip: "10.0.0.147/24".into(),
+                        frequency: "5 GHz".into(),
+                        link_speed: "650 Mbps".into(),
+                        versions: "v4+v6".into(),
+                    },
+                    ConnectionData::WiredActive {
+                        interface: "eth0".into(),
+                        ip: "192.168.4.22/24".into(),
+                        name: "eth0".into(),
+                        versions: "v4+v6".into(),
+                    },
+                    ConnectionData::WifiInactive {
+                        name: "Acme-Corp".into(),
+                        last_used: Duration::from_secs(60 * 60 * 24),
+                        autoconnect: true,
+                        metered: false,
+                        tag: "WPA2-Enterprise".into(),
+                    },
+                    ConnectionData::WifiInactive {
+                        name: "Pixel-Tether".into(),
+                        last_used: Duration::from_secs(60 * 60 * 24 * 14),
+                        autoconnect: false,
+                        metered: true,
+                        tag: "WPA3".into(),
+                    },
+                ];
+                connected
+                    .lock()
+                    .unwrap()
+                    .list
+                    .extend(conns.into_iter().cycle().take(3));
 
                 *loading.lock().unwrap() = None;
             }
@@ -716,15 +625,21 @@ impl Component for HomeData {
             constraint!(== 2),
         );
 
+        let connected = self.connected.lock().unwrap();
+        let total_connected = connected.list.len();
+
         let (connections_header_widget, connections_header_constraint) = (
             ConnectionsHeader {
                 saved_count: 5,
                 active_count: 2,
+                selected: self
+                    .selected
+                    .connected_selected()
+                    .map(|idx| (idx, total_connected)),
             },
             constraint!(== 1),
         );
 
-        let connected = self.connected.lock().unwrap();
         let (connected_widget, connected_constraint) = if !connected.list.is_empty() {
             let con_sel = self.selected.connected_selected();
             let blocks = connected.list.iter().enumerate().map(|(idx, item)| {
@@ -762,31 +677,12 @@ impl Component for HomeData {
         );
 
         let (available_widget, available_constraint) = if !available.list.is_empty() {
-            let avail_sel = self.selected.available_selected();
-            let n = available.list.len();
-            let total_rows = (2 * n + 1) as u16;
-
-            let mut blocks: Vec<Either<AccessPointItem, Block>> =
-                Vec::with_capacity(total_rows as usize);
-            blocks.push(Right(Block::default()));
-            for (idx, item) in available.list.iter().enumerate() {
-                let selected = avail_sel.is_some_and(|sel| sel == idx);
-                blocks.push(Left(AccessPointItem {
-                    data: item,
-                    selected,
-                }));
-                blocks.push(Right(Block::default()));
-            }
-
             (
-                Left(WidgetList::new(
-                    Layout::vertical(
-                        std::iter::repeat_n(1u16, total_rows as usize)
-                            .map(|i| constraint!(== i)),
-                    ),
-                    blocks,
-                )),
-                constraint!(*= total_rows),
+                Left(AvailableList {
+                    items: &available.list,
+                    selected: self.selected.available_selected(),
+                }),
+                constraint!(*= 1),
             )
         } else {
             let text = "There are no access points available";

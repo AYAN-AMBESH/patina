@@ -1,16 +1,45 @@
+use std::{borrow::Cow, time::Duration};
+
 use ratatui::{
     layout::Layout,
-    macros::{span, text},
-    style::Style,
+    macros::span,
+    style::{Color, Style},
     widgets::Widget,
 };
 
-const BRAILLE_BITS: [[u8; 2]; 4] = [
-    [0x01, 0x08],
-    [0x02, 0x10],
-    [0x04, 0x20],
-    [0x40, 0x80],
-];
+use crate::application::theme::PATINA;
+
+pub type CowStr = Cow<'static, str>;
+
+pub fn strength_bars(s: f32) -> &'static str {
+    if s >= 75.0 {
+        "▮▮▮▮"
+    } else if s >= 55.0 {
+        "▮▮▮▯"
+    } else if s >= 35.0 {
+        "▮▮▯▯"
+    } else if s >= 15.0 {
+        "▮▯▯▯"
+    } else {
+        "▯▯▯▯"
+    }
+}
+
+pub fn humanize_duration(d: Duration) -> String {
+    timeago::Formatter::new().convert(d)
+}
+
+pub fn strength_color(s: f32) -> Color {
+    if s >= 55.0 {
+        PATINA.live
+    } else if s >= 35.0 {
+        PATINA.warn
+    } else {
+        PATINA.danger
+    }
+}
+
+const BRAILLE_BITS: [[u8; 2]; 4] = [[0x01, 0x08], [0x02, 0x10], [0x04, 0x20], [0x40, 0x80]];
 
 pub struct BrailleSparkline<'a> {
     data: &'a [usize],
