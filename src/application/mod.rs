@@ -30,7 +30,13 @@ pub struct Application {
 }
 
 impl Application {
-    pub fn new(Context { log_file, fps }: Context) -> Self {
+    pub fn new(
+        Context {
+            log_file,
+            fps,
+            connection_maxitem,
+        }: Context,
+    ) -> Self {
         let (message_tx, message_rx) = std::sync::mpsc::channel();
         let message_tx = Arc::new(message_tx);
 
@@ -38,6 +44,7 @@ impl Application {
             log_file,
             fps,
             message: message_tx.clone(),
+            connection_maxitem,
         };
 
         Self {

@@ -9,6 +9,13 @@ use ratatui::{
 
 use crate::application::theme::PATINA;
 
+// TODO: Currently scrolling is stateless, so it doesn't differentiate between
+// the user scrolling up or down. this means the selection stays at the bottom
+// even if the user is scrolling.
+//
+// To resolve this, we need additional book keeping on the "last scroll
+// direction", and using that to switch the scrolling algo.
+
 /// Given a number of items, max number of items which can be shown, and a possibly selected index:
 /// returns the range of items that must be rendered
 pub fn selected_scroll(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {

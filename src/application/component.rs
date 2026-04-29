@@ -11,6 +11,7 @@ pub struct Context {
     #[allow(unused)]
     pub log_file: PathBuf,
     pub fps: u32,
+    pub connection_maxitem: usize,
 }
 
 pub struct RichContext {
@@ -19,6 +20,7 @@ pub struct RichContext {
     pub fps: u32,
     #[allow(unused)]
     pub message: Arc<Sender<Message>>,
+    pub connection_maxitem: usize,
 }
 
 pub enum Message {

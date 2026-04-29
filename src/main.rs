@@ -47,7 +47,11 @@ fn main() -> anyhow::Result<()> {
 
     setup_logging(&log_file)?;
 
-    let context = AppContext { log_file, fps: 144 };
+    let context = AppContext {
+        log_file,
+        fps: 144,
+        connection_maxitem: 5,
+    };
 
     let application = Application::new(context);
 

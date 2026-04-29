@@ -9,7 +9,7 @@ use ratatui::{
 
 use crate::application::{
     theme::PATINA,
-    utils::{CowStr, Separator, WidgetList, humanize_duration, strength_bars},
+    utils::{CowStr, Separator, WidgetList, humanize_duration, selected_scroll, strength_bars},
 };
 
 pub const ITEM_HEIGHT: u16 = 4;
@@ -44,6 +44,7 @@ pub enum ConnectionData {
 pub struct ConnectedList<'a> {
     pub items: &'a [ConnectionData],
     pub selected: Option<usize>,
+    pub max_items: usize,
 }
 
 impl Widget for ConnectedList<'_> {
@@ -51,15 +52,19 @@ impl Widget for ConnectedList<'_> {
     where
         Self: Sized,
     {
-        let items = self.items.iter().enumerate().map(|(idx, item)| ConnectionItem {
-            data: item,
-            selected: self.selected.is_some_and(|sel| sel == idx),
-        });
+        let range = selected_scroll(self.items.len(), self.max_items, self.selected);
+        let start = range.start;
+        let len = range.len();
+        let items = self.items[range]
+            .iter()
+            .enumerate()
+            .map(|(idx, item)| ConnectionItem {
+                data: item,
+                selected: self.selected.is_some_and(|sel| sel == start + idx),
+            });
 
         let list = WidgetList::new(
-            Layout::vertical(
-                std::iter::repeat_n(ITEM_HEIGHT, self.items.len()).map(|i| constraint!(== i)),
-            ),
+            Layout::vertical(std::iter::repeat_n(ITEM_HEIGHT, len).map(|i| constraint!(== i))),
             items,
         );
 

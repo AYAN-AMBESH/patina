@@ -385,7 +385,7 @@ impl HomeData {
                     .lock()
                     .unwrap()
                     .list
-                    .extend(conns.into_iter().cycle().take(3));
+                    .extend(conns.into_iter().cycle().take(9));
 
                 *loading.lock().unwrap() = None;
             }
@@ -486,13 +486,18 @@ impl Component for HomeData {
             constraint!(== 1),
         );
 
+        // TODO: when scrolling crosses the pane boundary, the connected list snaps back to rendering from 0
+        // keep additional data to avoid that snapping
         let (connected_widget, connected_constraint) = if !connected.list.is_empty() {
             (
                 Left(ConnectedList {
                     items: &connected.list,
                     selected: self.selected.connected_selected(),
+                    // TODO: load from app context
+                    max_items: 5,
                 }),
-                constraint!(== connected.list.len() as u16 * ITEM_HEIGHT),
+                // TODO: load from AppContext
+                constraint!(== connected.list.len().min(5) as u16 * ITEM_HEIGHT),
             )
         } else {
             let text = "There are no connections";

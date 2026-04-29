@@ -32,8 +32,7 @@ impl Widget for AvailableList<'_> {
         Self: Sized,
     {
         const ITEM_HEIGHT: u16 = 3;
-        let max_count = 4;
-        // let max_count = area.height.div_euclid(ITEM_HEIGHT);
+        let max_count = area.height.div_euclid(ITEM_HEIGHT);
         let range = selected_scroll(self.items.len(), max_count as _, self.selected);
         let len = range.len();
         let start = range.start;
