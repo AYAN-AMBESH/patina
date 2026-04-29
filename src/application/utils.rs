@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::Duration};
+use std::{borrow::Cow, ops::Range, time::Duration};
 
 use ratatui::{
     layout::Layout,
@@ -8,6 +8,23 @@ use ratatui::{
 };
 
 use crate::application::theme::PATINA;
+
+/// Given a number of items, max number of items which can be shown, and a possibly selected index:
+/// returns the range of items that must be rendered
+pub fn selected_scroll(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
+    let Some(selected) = selected else {
+        let min = max_items.min(items);
+        return 0..min;
+    };
+
+    if items <= max_items || selected < max_items {
+        return 0..items.min(max_items);
+    }
+
+    let end = selected + 1;
+    let start = end - max_items;
+    start..end
+}
 
 pub type CowStr = Cow<'static, str>;
 
@@ -215,5 +232,140 @@ impl Widget for Separator {
         let text = span![self.style; text];
 
         text.render(area, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selected_scroll;
+
+    #[test]
+    fn none_both_zero() {
+        assert_eq!(selected_scroll(0, 0, None), 0..0);
+    }
+
+    #[test]
+    fn none_zero_items() {
+        assert_eq!(selected_scroll(0, 5, None), 0..0);
+    }
+
+    #[test]
+    fn none_zero_max() {
+        assert_eq!(selected_scroll(5, 0, None), 0..0);
+    }
+
+    #[test]
+    fn none_items_below_max() {
+        assert_eq!(selected_scroll(3, 5, None), 0..3);
+    }
+
+    #[test]
+    fn none_items_equal_max() {
+        assert_eq!(selected_scroll(5, 5, None), 0..5);
+    }
+
+    #[test]
+    fn none_items_above_max() {
+        assert_eq!(selected_scroll(10, 3, None), 0..3);
+    }
+
+    #[test]
+    fn some_fits_first() {
+        assert_eq!(selected_scroll(3, 5, Some(0)), 0..3);
+    }
+
+    #[test]
+    fn some_fits_last() {
+        assert_eq!(selected_scroll(3, 5, Some(2)), 0..3);
+    }
+
+    #[test]
+    fn some_exact_first() {
+        assert_eq!(selected_scroll(5, 5, Some(0)), 0..5);
+    }
+
+    #[test]
+    fn some_exact_last() {
+        assert_eq!(selected_scroll(5, 5, Some(4)), 0..5);
+    }
+
+    #[test]
+    fn some_overflow_first_window_start() {
+        assert_eq!(selected_scroll(10, 3, Some(0)), 0..3);
+    }
+
+    #[test]
+    fn some_overflow_first_window_end() {
+        assert_eq!(selected_scroll(10, 3, Some(2)), 0..3);
+    }
+
+    #[test]
+    fn some_overflow_max_one_first() {
+        assert_eq!(selected_scroll(10, 1, Some(0)), 0..1);
+    }
+
+    #[test]
+    fn some_scroll_just_past_first_window() {
+        assert_eq!(selected_scroll(10, 3, Some(3)), 1..4);
+    }
+
+    #[test]
+    fn some_scroll_middle() {
+        assert_eq!(selected_scroll(10, 3, Some(5)), 3..6);
+    }
+
+    #[test]
+    fn some_scroll_last() {
+        assert_eq!(selected_scroll(10, 3, Some(9)), 7..10);
+    }
+
+    #[test]
+    fn some_scroll_max_one_middle() {
+        assert_eq!(selected_scroll(10, 1, Some(5)), 5..6);
+    }
+
+    #[test]
+    fn some_scroll_max_one_last() {
+        assert_eq!(selected_scroll(10, 1, Some(9)), 9..10);
+    }
+
+    #[test]
+    fn some_scroll_large() {
+        assert_eq!(selected_scroll(100, 10, Some(50)), 41..51);
+    }
+
+    #[test]
+    fn edge_zero_items_with_selection() {
+        assert_eq!(selected_scroll(0, 5, Some(0)), 0..0);
+    }
+
+    #[test]
+    fn edge_all_zero_with_selection() {
+        assert_eq!(selected_scroll(0, 0, Some(0)), 0..0);
+    }
+
+    #[test]
+    fn edge_zero_max_no_selection() {
+        assert_eq!(selected_scroll(5, 0, None), 0..0);
+    }
+
+    #[test]
+    fn edge_zero_max_with_selection() {
+        assert_eq!(selected_scroll(5, 0, Some(2)), 3..3);
+    }
+
+    #[test]
+    fn edge_selected_past_end_fits() {
+        assert_eq!(selected_scroll(5, 10, Some(7)), 0..5);
+    }
+
+    #[test]
+    fn edge_selected_past_end_scroll() {
+        assert_eq!(selected_scroll(5, 3, Some(5)), 3..6);
+    }
+
+    #[test]
+    fn edge_minimal_scrolled() {
+        assert_eq!(selected_scroll(1, 1, Some(0)), 0..1);
     }
 }
