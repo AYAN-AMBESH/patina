@@ -1,7 +1,7 @@
 use ratatui::{
     layout::Layout,
     macros::{constraint, constraints, line, span},
-    style::Style,
+    style::{Color, Style},
     widgets::{Block, Widget},
 };
 
@@ -41,6 +41,7 @@ impl Widget for AvailableList<'_> {
         let items = items.iter().enumerate().map(|(idx, item)| AccessPointItem {
             data: item,
             selected: self.selected.is_some_and(|sel| sel == idx + start),
+            disabled: self.selected.is_none(),
         });
 
         let list = WidgetList::new(
@@ -55,6 +56,7 @@ impl Widget for AvailableList<'_> {
 pub struct AccessPointItem<'a> {
     pub data: &'a AvailableAPDetails,
     pub selected: bool,
+    pub disabled: bool,
 }
 
 impl Widget for AccessPointItem<'_> {
@@ -67,6 +69,10 @@ impl Widget for AccessPointItem<'_> {
             "AccessPointItem must have at least height of 3points, instead had {}",
             area.height
         );
+
+        let disabled_color = |color: Color| {
+            if self.disabled { PATINA.mute } else { color }
+        };
 
         if self.selected {
             let edge_style = Style::new().fg(PATINA.bg_alt).bg(PATINA.bg);
@@ -96,19 +102,21 @@ impl Widget for AccessPointItem<'_> {
             link_speed,
         } = self.data;
 
-        let bars = span!(strength_color(*strength); "{}  ", strength_bars(*strength));
-        let pct = span!(PATINA.dim; "{}%  ", strength.round() as u32);
+        let bars =
+            span!(disabled_color(strength_color(*strength)); "{}  ", strength_bars(*strength));
+        let pct = span!(disabled_color(PATINA.dim); "{}%  ", strength.round() as u32);
         let pad = span!("    ");
-        let name = span!("{}  ", ssid);
-        let sec = span!(PATINA.dim; security);
+        let name = span!(disabled_color(PATINA.fg);"{}  ", ssid);
+        let sec = span!(disabled_color(PATINA.dim); security);
 
         let left = line![pad, bars, pct, name, sec].left_aligned();
 
         let right =
-            line![span!(PATINA.mute; "{frequency} · ch {channel} · {link_speed}")].right_aligned();
+            line![span!(disabled_color(PATINA.mute); "{frequency} · ch {channel} · {link_speed}")]
+                .right_aligned();
 
         let style = if self.selected {
-            Style::new().bg(PATINA.bg_alt)
+            Style::new().bg(disabled_color(PATINA.bg_alt))
         } else {
             Style::new()
         };

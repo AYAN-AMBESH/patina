@@ -11,6 +11,7 @@ use poppingboba::{
 use ratatui::{
     layout::Layout,
     macros::{constraint, constraints, line, span, text},
+    style::Color,
     widgets::Widget,
 };
 
@@ -44,6 +45,7 @@ struct ConnectionsHeader {
     pub saved_count: usize,
     pub active_count: usize,
     pub selected: Option<(usize, usize)>, // (idx, total)
+    pub disabled: bool,
 }
 
 struct Header {
@@ -59,16 +61,19 @@ impl Widget for &ConnectionsHeader {
     where
         Self: Sized,
     {
-        let title = span!(PATINA.accent; "CONNECTIONS  ");
-        let status =
-            span!(PATINA.mute; "{} saved · {} active", self.saved_count, self.active_count);
+        let disabled_color = |color: Color| {
+            if self.disabled { PATINA.mute } else { color }
+        };
+
+        let title = span!(disabled_color(PATINA.accent); "CONNECTIONS  ");
+        let status = span!(disabled_color(PATINA.mute); "{} saved · {} active", self.saved_count, self.active_count);
 
         let line = line![title, status];
 
         if let Some((idx, total)) = self.selected {
-            let tag = span!(PATINA.mute; "selected ");
-            let page = span!(PATINA.dim; "{}", idx + 1);
-            let total = span!(PATINA.mute; "/{total}");
+            let tag = span!(disabled_color(PATINA.mute); "selected ");
+            let page = span!(disabled_color(PATINA.dim); "{}", idx + 1);
+            let total = span!(disabled_color(PATINA.mute); "/{total}");
 
             let line = line![tag, page, total].right_aligned();
             line.render(area, buf);
@@ -158,6 +163,7 @@ struct AccessPointsHeader {
     pub in_range: u64,
     pub scanned_ago: CowStr,
     pub selected: Option<(usize, usize)>, // (idx, total)
+    pub disabled: bool,
 }
 
 impl Widget for &AccessPointsHeader {
@@ -165,16 +171,19 @@ impl Widget for &AccessPointsHeader {
     where
         Self: Sized,
     {
-        let title = span!(PATINA.accent; "ACCESS POINTS  ");
-        let status =
-            span!(PATINA.mute; "{} in range · scanned {}", self.in_range, self.scanned_ago);
+        let disabled_color = |color: Color| {
+            if self.disabled { PATINA.mute } else { color }
+        };
+
+        let title = span!(disabled_color(PATINA.accent); "ACCESS POINTS  ");
+        let status = span!(disabled_color(PATINA.mute); "{} in range · scanned {}", self.in_range, self.scanned_ago);
 
         let line = line![title, status];
 
         if let Some((idx, total)) = self.selected {
-            let tag = span!(PATINA.mute; "selected ");
-            let page = span!(PATINA.dim; "{}", idx + 1);
-            let total = span!(PATINA.mute; "/{total}");
+            let tag = span!(disabled_color(PATINA.mute); "selected ");
+            let page = span!(disabled_color(PATINA.dim); "{}", idx + 1);
+            let total = span!(disabled_color(PATINA.mute); "/{total}");
 
             let line = line![tag, page, total].right_aligned();
             line.render(area, buf);
@@ -294,7 +303,9 @@ impl HomeData {
         let available = Arc::new(Mutex::new(Available { list: Vec::new() }));
         let selected = Selected::None;
 
-        // run async task to load connections and update state accordingly
+        // TODO: right now, when the app starts, no section is selected. change
+        // that to select the very first item in the connection list. of course,
+        // handling the edge cases
         spawn({
             let loading = loading.clone();
             let connected = connected.clone();
@@ -478,6 +489,7 @@ impl Component for HomeData {
             ConnectionsHeader {
                 saved_count: 5,
                 active_count: 2,
+                disabled: self.selected.connected_selected().is_none(),
                 selected: self
                     .selected
                     .connected_selected()
@@ -511,6 +523,7 @@ impl Component for HomeData {
             AccessPointsHeader {
                 in_range: available.list.len() as u64,
                 scanned_ago: "just now".into(),
+                disabled: self.selected.available_selected().is_none(),
                 selected: self
                     .selected
                     .available_selected()

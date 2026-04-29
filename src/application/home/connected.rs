@@ -3,7 +3,7 @@ use std::time::Duration;
 use ratatui::{
     layout::{Layout, Rect},
     macros::{constraint, constraints, line, span, text},
-    style::Style,
+    style::{Color, Style},
     widgets::{Block, Widget},
 };
 
@@ -61,6 +61,7 @@ impl Widget for ConnectedList<'_> {
             .map(|(idx, item)| ConnectionItem {
                 data: item,
                 selected: self.selected.is_some_and(|sel| sel == start + idx),
+                disabled: self.selected.is_none(),
             });
 
         let list = WidgetList::new(
@@ -75,6 +76,7 @@ impl Widget for ConnectedList<'_> {
 pub struct ConnectionItem<'a> {
     pub data: &'a ConnectionData,
     pub selected: bool,
+    pub disabled: bool,
 }
 
 impl Widget for ConnectionItem<'_> {
@@ -82,6 +84,10 @@ impl Widget for ConnectionItem<'_> {
     where
         Self: Sized,
     {
+        let disabled_color = |color: Color| {
+            if self.disabled { PATINA.mute } else { color }
+        };
+
         let [top_edge, text_top, text_bottom, bot_edge] =
             Layout::vertical(constraints![== 1, == 1, == 1, == 1]).areas(area);
 
@@ -130,17 +136,17 @@ impl Widget for ConnectionItem<'_> {
                 link_speed,
                 versions,
             } => {
-                let bars = span!(PATINA.live; "{}  ", strength_bars(*strength));
-                let strength = span!(PATINA.dim;"{}%  ", strength.round() as u32);
-                let name = span!("{}", name);
+                let bars = span!(disabled_color(PATINA.live); "{}  ", strength_bars(*strength));
+                let strength = span!(disabled_color(PATINA.dim);"{}%  ", strength.round() as u32);
+                let name = span!(disabled_color(PATINA.fg);"{}", name);
                 let top = line![bars, strength, name];
 
                 let bottom = line![
-                    span!(PATINA.mute; "{ip}  "),
-                    span!(PATINA.dim; "on "),
-                    span!(PATINA.soft; "{interface} "),
-                    span!(PATINA.mute; "· {frequency} · {link_speed} · "),
-                    span!(PATINA.live; versions)
+                    span!(disabled_color(PATINA.mute); "{ip}  "),
+                    span!(disabled_color(PATINA.dim); "on "),
+                    span!(disabled_color(PATINA.soft); "{interface} "),
+                    span!(disabled_color(PATINA.mute); "· {frequency} · {link_speed} · "),
+                    span!(disabled_color(PATINA.live); versions)
                 ];
 
                 let text = text![top, bottom];
@@ -153,17 +159,17 @@ impl Widget for ConnectionItem<'_> {
                 name,
                 versions,
             } => {
-                let bars = span!(PATINA.live; "═══  ");
-                let name = span!("{} ", name);
-                let kind = span!(PATINA.dim; "· Wired");
+                let bars = span!(disabled_color(PATINA.live); "═══  ");
+                let name = span!(disabled_color(PATINA.fg); "{} ", name);
+                let kind = span!(disabled_color(PATINA.dim); "· Wired");
                 let top = line![bars, name, kind];
 
                 let bottom = line![
-                    span!(PATINA.mute; "{ip}  "),
-                    span!(PATINA.dim; "on "),
-                    span!(PATINA.soft; "{interface} "),
-                    span!(PATINA.dim; "· "),
-                    span!(PATINA.live; versions)
+                    span!(disabled_color(PATINA.mute); "{ip}  "),
+                    span!(disabled_color(PATINA.dim); "on "),
+                    span!(disabled_color(PATINA.soft); "{interface} "),
+                    span!(disabled_color(PATINA.dim); "· "),
+                    span!(disabled_color(PATINA.live); versions)
                 ];
 
                 let text = text![top, bottom];
@@ -176,26 +182,27 @@ impl Widget for ConnectionItem<'_> {
                 metered,
                 tag,
             } => {
-                let kind = span!(PATINA.fg_alt; "wifi  ");
-                let name = span!("{}", name);
+                let kind = span!(disabled_color(PATINA.fg_alt); "wifi  ");
+                let name = span!(disabled_color(PATINA.fg); "{}", name);
                 let top_left = line![kind, name].left_aligned();
 
-                let tag = span!(PATINA.dim; tag);
+                let tag = span!(disabled_color(PATINA.dim); tag);
                 let top_right = line![tag].right_aligned();
 
-                let used_label = span!(PATINA.mute; "used ");
-                let used_val = span!(PATINA.dim; "{}  ", humanize_duration(*last_used));
-                let ac_label = span!(PATINA.mute; "autoconnect ");
+                let used_label = span!(disabled_color(PATINA.mute); "used ");
+                let used_val =
+                    span!(disabled_color(PATINA.dim); "{}  ", humanize_duration(*last_used));
+                let ac_label = span!(disabled_color(PATINA.mute); "autoconnect ");
                 let ac_val = if *autoconnect {
-                    span!(PATINA.live; "on")
+                    span!(disabled_color(PATINA.live); "on")
                 } else {
-                    span!(PATINA.dim; "off")
+                    span!(disabled_color(PATINA.dim); "off")
                 };
 
                 let mut bottom_spans = vec![used_label, used_val, ac_label, ac_val];
                 if *metered {
                     bottom_spans.push(span!("  "));
-                    bottom_spans.push(span!(PATINA.warn; "metered"));
+                    bottom_spans.push(span!(disabled_color(PATINA.warn); "metered"));
                 }
                 let bottom = ratatui::text::Line::from(bottom_spans);
 
