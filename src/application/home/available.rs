@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::application::{
     theme::PATINA,
-    utils::{CowStr, Separator, WidgetList, strength_bars, strength_color},
+    utils::{CowStr, Separator, WidgetList, selected_scroll, strength_bars, strength_color},
 };
 
 // TODO: remove this clone, only needed for testing
@@ -32,18 +32,20 @@ impl Widget for AvailableList<'_> {
         Self: Sized,
     {
         const ITEM_HEIGHT: u16 = 3;
-        let item_count = area.height.div_euclid(ITEM_HEIGHT);
+        let max_count = 4;
+        // let max_count = area.height.div_euclid(ITEM_HEIGHT);
+        let range = selected_scroll(self.items.len(), max_count as _, self.selected);
+        let len = range.len();
+        let start = range.start;
 
-        let items = &self.items[..item_count as usize];
+        let items = &self.items[range];
         let items = items.iter().enumerate().map(|(idx, item)| AccessPointItem {
             data: item,
-            selected: self.selected.is_some_and(|sel| sel == idx),
+            selected: self.selected.is_some_and(|sel| sel == idx + start),
         });
 
         let list = WidgetList::new(
-            Layout::vertical(
-                std::iter::repeat_n(ITEM_HEIGHT, item_count as _).map(|i| constraint!(== i)),
-            ),
+            Layout::vertical(std::iter::repeat_n(ITEM_HEIGHT, len).map(|i| constraint!(== i))),
             items,
         );
 

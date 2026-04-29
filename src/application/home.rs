@@ -157,6 +157,7 @@ struct Available {
 struct AccessPointsHeader {
     pub in_range: u64,
     pub scanned_ago: CowStr,
+    pub selected: Option<(usize, usize)>, // (idx, total)
 }
 
 impl Widget for &AccessPointsHeader {
@@ -169,6 +170,15 @@ impl Widget for &AccessPointsHeader {
             span!(PATINA.mute; "{} in range · scanned {}", self.in_range, self.scanned_ago);
 
         let line = line![title, status];
+
+        if let Some((idx, total)) = self.selected {
+            let tag = span!(PATINA.mute; "selected ");
+            let page = span!(PATINA.dim; "{}", idx + 1);
+            let total = span!(PATINA.mute; "/{total}");
+
+            let line = line![tag, page, total].right_aligned();
+            line.render(area, buf);
+        }
 
         line.render(area, buf);
     }
@@ -496,6 +506,10 @@ impl Component for HomeData {
             AccessPointsHeader {
                 in_range: available.list.len() as u64,
                 scanned_ago: "just now".into(),
+                selected: self
+                    .selected
+                    .available_selected()
+                    .map(|idx| (idx, available.list.len())),
             },
             constraint!(== 1),
         );
