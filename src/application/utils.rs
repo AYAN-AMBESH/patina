@@ -35,6 +35,7 @@ pub fn selected_scroll(items: usize, max_items: usize, selected: Option<usize>) 
 
 pub type CowStr = Cow<'static, str>;
 
+#[inline]
 pub fn strength_bars(s: f32) -> &'static str {
     if s >= 75.0 {
         "▮▮▮▮"
@@ -49,10 +50,12 @@ pub fn strength_bars(s: f32) -> &'static str {
     }
 }
 
+#[inline]
 pub fn humanize_duration(d: Duration) -> String {
     timeago::Formatter::new().convert(d)
 }
 
+#[inline]
 pub fn strength_color(s: f32) -> Color {
     if s >= 55.0 {
         PATINA.live
