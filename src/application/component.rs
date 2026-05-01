@@ -6,6 +6,8 @@ use std::{
 use enum_dispatch::enum_dispatch;
 use ratatui::{Frame, crossterm};
 
+use crate::application::home::{available::AvailableAPDetails, connected::ConnectionData};
+
 /// Read only context, shared across the application
 pub struct Context {
     #[allow(unused)]
@@ -23,9 +25,22 @@ pub struct RichContext {
     pub connection_maxitem: usize,
 }
 
+pub struct Connected {
+    pub list: Vec<ConnectionData>,
+}
+
+pub struct Available {
+    pub list: Vec<AvailableAPDetails>,
+}
+
 pub enum Message {
     Crossterm(crossterm::event::Event),
     GlobalTick,
+
+    // Home pane events
+    LoadConnected(Connected),
+    LoadAvailable(Available),
+    FinishLoading,
 }
 
 #[enum_dispatch]

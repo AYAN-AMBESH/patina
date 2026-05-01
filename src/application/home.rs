@@ -1,8 +1,4 @@
-use std::{
-    sync::{Arc, Mutex},
-    thread::spawn,
-    time::Duration,
-};
+use std::{thread::spawn, time::Duration};
 
 use circular_buffer::CircularBuffer;
 use poppingboba::{
@@ -17,7 +13,7 @@ use ratatui::{
 };
 
 use crate::application::{
-    component::RichContext,
+    component::{Available, Connected, RichContext},
     home::{
         available::{AvailableAPDetails, AvailableList},
         connected::{ConnectedList, ConnectionData, ITEM_HEIGHT},
@@ -30,15 +26,15 @@ use crate::application::{
     },
 };
 
-mod available;
-mod connected;
+pub mod available;
+pub mod connected;
 
 use super::component::{Component, Message};
 
 pub struct HomeData {
-    loading: Arc<Mutex<Option<Spinner>>>,
-    connected: Arc<Mutex<Connected>>,
-    available: Arc<Mutex<Available>>,
+    loading: Option<Spinner>,
+    connected: Connected,
+    available: Available,
     selected: Selected,
 }
 
@@ -150,14 +146,6 @@ impl Widget for Help {
             }
         }
     }
-}
-
-struct Connected {
-    list: Vec<ConnectionData>,
-}
-
-struct Available {
-    list: Vec<AvailableAPDetails>,
 }
 
 struct AccessPointsHeader {
@@ -299,70 +287,66 @@ impl Selected {
 impl HomeData {
     pub fn new(ctx: &RichContext) -> Self {
         let loading = Spinner::new(SpinnerType::dot(), ctx.fps);
-        let loading = Arc::new(Mutex::new(Some(loading)));
-        let connected = Arc::new(Mutex::new(Connected { list: Vec::new() }));
-        let available = Arc::new(Mutex::new(Available { list: Vec::new() }));
+        let connected = Connected { list: Vec::new() };
+        let available = Available { list: Vec::new() };
         let selected = Selected::None;
 
         // TODO: right now, when the app starts, no section is selected. change
         // that to select the very first item in the connection list. of course,
         // handling the edge cases
         spawn({
-            let loading = loading.clone();
-            let connected = connected.clone();
-            let available = available.clone();
+            let message_tx = ctx.message.clone();
             move || {
                 // mock loading, uncomment to checkout loading state
-                // sleep(Duration::from_secs(5));
-                available.lock().unwrap().list.extend(
-                    [
-                        AvailableAPDetails {
-                            strength: 82.,
-                            ssid: "Overcast-5G".into(),
-                            security: "WPA2".into(),
-                            frequency: "5.22 GHz".into(),
-                            channel: 44,
-                            link_speed: "650 Mbps".into(),
-                        },
-                        AvailableAPDetails {
-                            strength: 71.,
-                            ssid: "Acme-Corp".into(),
-                            security: "WPA2-E".into(),
-                            frequency: "5.75 GHz".into(),
-                            channel: 149,
-                            link_speed: "867 Mbps".into(),
-                        },
-                        AvailableAPDetails {
-                            strength: 58.,
-                            ssid: "FiberLink_9A82".into(),
-                            security: "WPA3".into(),
-                            frequency: "6.13 GHz".into(),
-                            channel: 37,
-                            link_speed: "1201 Mbps".into(),
-                        },
-                        AvailableAPDetails {
-                            strength: 42.,
-                            ssid: "xfinitywifi".into(),
-                            security: "Open".into(),
-                            frequency: "2.41 GHz".into(),
-                            channel: 1,
-                            link_speed: "150 Mbps".into(),
-                        },
-                        AvailableAPDetails {
-                            strength: 28.,
-                            ssid: "TP-Link_5544".into(),
-                            security: "WPA2".into(),
-                            frequency: "2.44 GHz".into(),
-                            channel: 6,
-                            link_speed: "300 Mbps".into(),
-                        },
-                    ]
-                    .into_iter()
-                    .cycle()
-                    .take(24),
-                );
+                // std::thread::sleep(std::time::Duration::from_secs(5));
+                let available: Vec<_> = [
+                    AvailableAPDetails {
+                        strength: 82.,
+                        ssid: "Overcast-5G".into(),
+                        security: "WPA2".into(),
+                        frequency: "5.22 GHz".into(),
+                        channel: 44,
+                        link_speed: "650 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 71.,
+                        ssid: "Acme-Corp".into(),
+                        security: "WPA2-E".into(),
+                        frequency: "5.75 GHz".into(),
+                        channel: 149,
+                        link_speed: "867 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 58.,
+                        ssid: "FiberLink_9A82".into(),
+                        security: "WPA3".into(),
+                        frequency: "6.13 GHz".into(),
+                        channel: 37,
+                        link_speed: "1201 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 42.,
+                        ssid: "xfinitywifi".into(),
+                        security: "Open".into(),
+                        frequency: "2.41 GHz".into(),
+                        channel: 1,
+                        link_speed: "150 Mbps".into(),
+                    },
+                    AvailableAPDetails {
+                        strength: 28.,
+                        ssid: "TP-Link_5544".into(),
+                        security: "WPA2".into(),
+                        frequency: "2.44 GHz".into(),
+                        channel: 6,
+                        link_speed: "300 Mbps".into(),
+                    },
+                ]
+                .into_iter()
+                .cycle()
+                .take(24)
+                .collect();
 
-                let conns = vec![
+                let conns: Vec<_> = [
                     ConnectionData::WifiActive {
                         strength: 82.,
                         name: "Overcast-5G".into(),
@@ -396,19 +380,22 @@ impl HomeData {
                         metered: true,
                         tag: "WPA3".into(),
                     },
-                ];
-                connected
-                    .lock()
-                    .unwrap()
-                    .list
-                    .extend(conns.into_iter().cycle().take(9));
+                ]
+                .into_iter()
+                .cycle()
+                .take(12)
+                .collect();
 
-                *loading.lock().unwrap() = None;
+                let available = Available { list: available };
+                let connected = Connected { list: conns };
+                message_tx.send(Message::LoadConnected(connected)).unwrap();
+                message_tx.send(Message::LoadAvailable(available)).unwrap();
+                message_tx.send(Message::FinishLoading).unwrap();
             }
         });
 
         Self {
-            loading,
+            loading: Some(loading),
             connected,
             available,
             selected,
@@ -424,20 +411,20 @@ impl Component for HomeData {
                     ratatui::crossterm::event::Event::Key(key_event)
                         if key_event.code.is_char('j') =>
                     {
-                        let con_len = self.connected.lock().unwrap().list.len();
-                        let avail_len = self.available.lock().unwrap().list.len();
+                        let con_len = self.connected.list.len();
+                        let avail_len = self.available.list.len();
                         self.selected = self.selected.down(con_len, avail_len);
                     }
                     ratatui::crossterm::event::Event::Key(key_event)
                         if key_event.code.is_char('k') =>
                     {
-                        let con_len = self.connected.lock().unwrap().list.len();
-                        let avail_len = self.available.lock().unwrap().list.len();
+                        let con_len = self.connected.list.len();
+                        let avail_len = self.available.list.len();
                         self.selected = self.selected.up(con_len, avail_len);
                     }
                     ratatui::crossterm::event::Event::Key(key_event) if key_event.code.is_tab() => {
-                        let con_len = self.connected.lock().unwrap().list.len();
-                        let avail_len = self.available.lock().unwrap().list.len();
+                        let con_len = self.connected.list.len();
+                        let avail_len = self.available.list.len();
                         self.selected = self.selected.tab(con_len, avail_len);
                     }
                     _ => {
@@ -446,16 +433,18 @@ impl Component for HomeData {
                 }
             }
             Message::GlobalTick => {
-                let mut spinner = self.loading.lock().unwrap();
-                if let Some(spinner) = spinner.as_mut() {
+                if let Some(spinner) = self.loading.as_mut() {
                     spinner.tick();
                 }
             }
+            Message::LoadConnected(connected) => self.connected = connected,
+            Message::LoadAvailable(available) => self.available = available,
+            Message::FinishLoading => self.loading = None,
         }
     }
 
     fn draw(&self, _ctx: &RichContext, frame: &mut ratatui::Frame<'_>) {
-        let spinner = self.loading.lock().unwrap();
+        let spinner = &self.loading;
         if let Some(spinner) = spinner.as_ref() {
             let text = " Loading patina";
             let center = frame
@@ -469,8 +458,6 @@ impl Component for HomeData {
             frame.render_widget(line![text], text_area);
             return;
         }
-
-        drop(spinner);
 
         let (header_widget, header_constraint) = (
             Header {
@@ -487,7 +474,7 @@ impl Component for HomeData {
             constraint!(== 2),
         );
 
-        let connected = self.connected.lock().unwrap();
+        let connected = &self.connected;
         let total_connected = connected.list.len();
 
         let (connections_header_widget, connections_header_constraint) = (
@@ -523,7 +510,7 @@ impl Component for HomeData {
             (Right(text), constraint!(== 3))
         };
 
-        let available = self.available.lock().unwrap();
+        let available = &self.available;
         let (access_points_header_widget, access_points_header_constraint) = (
             AccessPointsHeader {
                 in_range: available.list.len() as u64,
