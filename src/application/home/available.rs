@@ -7,7 +7,7 @@ use ratatui::{
 
 use crate::application::{
     theme::PATINA,
-    utils::{CowStr, Separator, WidgetList, selected_scroll, strength_bars, strength_color},
+    utils::{CowStr, Separator, WidgetList, selected_scroll_with_direction, ScrollState, strength_bars, strength_color},
 };
 
 // TODO: remove this clone, only needed for testing
@@ -24,6 +24,7 @@ pub struct AvailableAPDetails {
 pub struct AvailableList<'a> {
     pub items: &'a [AvailableAPDetails],
     pub selected: Option<usize>,
+    pub scroll_state: ScrollState,
 }
 
 impl Widget for AvailableList<'_> {
@@ -33,7 +34,7 @@ impl Widget for AvailableList<'_> {
     {
         const ITEM_HEIGHT: u16 = 3;
         let max_count = area.height.div_euclid(ITEM_HEIGHT);
-        let range = selected_scroll(self.items.len(), max_count as _, self.selected);
+        let (range, _) = selected_scroll_with_direction(self.items.len(), max_count as _, self.selected, self.scroll_state);
         let len = range.len();
         let start = range.start;
 

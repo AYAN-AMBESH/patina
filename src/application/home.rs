@@ -20,7 +20,7 @@ use crate::application::{
     },
     theme::PATINA,
     utils::{
-        CowStr,
+        CowStr, ScrollState,
         Either::{Left, Right},
         Separator, WidgetList,
     },
@@ -36,6 +36,14 @@ pub struct HomeData {
     connected: Connected,
     available: Available,
     selected: Selected,
+    connected_scroll_state: ScrollState,
+    available_scroll_state: ScrollState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PaneType {
+    Connected,
+    Available,
 }
 
 struct ConnectionsHeader {
@@ -399,7 +407,67 @@ impl HomeData {
             connected,
             available,
             selected,
+            connected_scroll_state: ScrollState::new(),
+            available_scroll_state: ScrollState::new(),
         }
+    }
+
+    fn sync_scroll_states(&mut self) {
+        // Directly update scroll states to track the current selection
+        // This ensures smooth scrolling behavior without double-processing
+        if let Some(idx) = self.selected.connected_selected() {
+            self.connected_scroll_state = ScrollState {
+                last_selected: Some(idx),
+                last_direction: self.connected_scroll_state.last_direction,
+            };
+        }
+        if let Some(idx) = self.selected.available_selected() {
+            self.available_scroll_state = ScrollState {
+                last_selected: Some(idx),
+                last_direction: self.available_scroll_state.last_direction,
+            };
+        }
+    }
+
+    fn handle_tab_press(&mut self) {
+        let con_len = self.connected.list.len();
+        let avail_len = self.available.list.len();
+        
+        // Get current pane before switch
+        let current_pane = if self.selected.connected_selected().is_some() {
+            Some(PaneType::Connected)
+        } else if self.selected.available_selected().is_some() {
+            Some(PaneType::Available)
+        } else {
+            None
+        };
+        
+        // Perform the tab switch
+        self.selected = self.selected.tab(con_len, avail_len);
+        
+        // Get new pane after switch
+        let new_pane = if self.selected.connected_selected().is_some() {
+            Some(PaneType::Connected)
+        } else if self.selected.available_selected().is_some() {
+            Some(PaneType::Available)
+        } else {
+            None
+        };
+        
+        // If we switched panes, reset the scroll state of the new pane
+        if current_pane != new_pane {
+            match new_pane {
+                Some(PaneType::Connected) => {
+                    self.connected_scroll_state = ScrollState::new();
+                }
+                Some(PaneType::Available) => {
+                    self.available_scroll_state = ScrollState::new();
+                }
+                None => {}
+            }
+        }
+        
+        self.sync_scroll_states();
     }
 }
 
@@ -409,11 +477,17 @@ impl Component for HomeData {
             Message::Crossterm(ev) => {
                 match ev {
                     ratatui::crossterm::event::Event::Key(key_event)
+                        if key_event.kind != ratatui::crossterm::event::KeyEventKind::Press =>
+                    {
+                        // Ignore key release/repeat events to avoid double-processing.
+                    }
+                    ratatui::crossterm::event::Event::Key(key_event)
                         if key_event.code.is_char('j') =>
                     {
                         let con_len = self.connected.list.len();
                         let avail_len = self.available.list.len();
                         self.selected = self.selected.down(con_len, avail_len);
+                        self.sync_scroll_states();
                     }
                     ratatui::crossterm::event::Event::Key(key_event)
                         if key_event.code.is_char('k') =>
@@ -421,11 +495,10 @@ impl Component for HomeData {
                         let con_len = self.connected.list.len();
                         let avail_len = self.available.list.len();
                         self.selected = self.selected.up(con_len, avail_len);
+                        self.sync_scroll_states();
                     }
                     ratatui::crossterm::event::Event::Key(key_event) if key_event.code.is_tab() => {
-                        let con_len = self.connected.list.len();
-                        let avail_len = self.available.list.len();
-                        self.selected = self.selected.tab(con_len, avail_len);
+                        self.handle_tab_press();
                     }
                     _ => {
                         // noop
@@ -499,6 +572,7 @@ impl Component for HomeData {
                     selected: self.selected.connected_selected(),
                     // TODO: load from app context
                     max_items: 5,
+                    scroll_state: self.connected_scroll_state,
                 }),
                 // TODO: load from AppContext
                 constraint!(== connected.list.len().min(5) as u16 * ITEM_HEIGHT),
@@ -529,6 +603,7 @@ impl Component for HomeData {
                 Left(AvailableList {
                     items: &available.list,
                     selected: self.selected.available_selected(),
+                    scroll_state: self.available_scroll_state,
                 }),
                 constraint!(*= 1),
             )

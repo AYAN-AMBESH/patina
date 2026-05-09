@@ -9,16 +9,114 @@ use ratatui::{
 
 use crate::application::theme::PATINA;
 
-// TODO: Currently scrolling is stateless, so it doesn't differentiate between
-// the user scrolling up or down. this means the selection stays at the bottom
-// even if the user is scrolling.
-//
-// To resolve this, we need additional book keeping on the "last scroll
-// direction", and using that to switch the scrolling algo.
+/// Represents the direction of the last scroll action
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScrollDirection {
+    Up,
+    Down,
+}
+
+/// Tracks scrolling state to differentiate between upward and downward scrolling
+#[derive(Debug, Clone, Copy)]
+pub struct ScrollState {
+    /// The last selected index before the current selection
+    pub last_selected: Option<usize>,
+    /// The direction of the last scroll action
+    pub last_direction: Option<ScrollDirection>,
+}
+
+impl ScrollState {
+    /// Create a new, uninitialized scroll state
+    pub fn new() -> Self {
+        Self {
+            last_selected: None,
+            last_direction: None,
+        }
+    }
+
+    pub fn advance(self, selected: Option<usize>) -> Self {
+        let direction = match (self.last_selected, selected) {
+            (Some(last), Some(current)) if current > last => ScrollDirection::Down,
+            (Some(last), Some(current)) if current < last => ScrollDirection::Up,
+            _ => self.last_direction.unwrap_or(ScrollDirection::Down),
+        };
+
+        Self {
+            last_selected: selected,
+            last_direction: Some(direction),
+        }
+    }
+}
+
+impl Default for ScrollState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 /// Given a number of items, max number of items which can be shown, and a possibly selected index:
 /// returns the range of items that must be rendered
 pub fn selected_scroll(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
+    let Some(selected) = selected else {
+        let min = max_items.min(items);
+        return 0..min;
+    };
+
+    if items <= max_items || selected < max_items {
+        return 0..items.min(max_items);
+    }
+
+    let end = selected + 1;
+    let start = end - max_items;
+    start..end
+}
+
+/// Performs scrolling with awareness of scroll direction
+///
+/// This function tracks whether the user is scrolling up or down and applies
+/// the appropriate scrolling algorithm:
+/// - When scrolling **up**: keeps the selected item near the top of the visible range
+/// - When scrolling **down**: keeps the selected item near the bottom of the visible range
+///
+/// # Returns
+/// A tuple of (scroll_range, updated_state)
+pub fn selected_scroll_with_direction(
+    items: usize,
+    max_items: usize,
+    selected: Option<usize>,
+    state: ScrollState,
+) -> (Range<usize>, ScrollState) {
+    let new_state = state.advance(selected);
+    let direction = new_state.last_direction.unwrap_or(ScrollDirection::Down);
+
+    // Apply direction-specific scrolling algorithm
+    let range = match direction {
+        ScrollDirection::Up => selected_scroll_up(items, max_items, selected),
+        ScrollDirection::Down => selected_scroll_down(items, max_items, selected),
+    };
+
+    (range, new_state)
+}
+
+/// Scrolls with selection kept near the top when moving up
+fn selected_scroll_up(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
+    let Some(selected) = selected else {
+        let min = max_items.min(items);
+        return 0..min;
+    };
+
+    if items <= max_items {
+        return 0..items;
+    }
+
+    // Keep selected item at or near the top of the visible range
+    let end = (selected + max_items).min(items);
+    let start = end.saturating_sub(max_items);
+    start..end
+}
+
+/// Scrolls with selection kept near the bottom when moving down (original behavior)
+fn selected_scroll_down(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
     let Some(selected) = selected else {
         let min = max_items.min(items);
         return 0..min;
@@ -247,7 +345,9 @@ impl Widget for Separator {
 
 #[cfg(test)]
 mod tests {
-    use super::selected_scroll;
+    use super::{selected_scroll, selected_scroll_with_direction, ScrollDirection, ScrollState};
+
+    // ===== Original selected_scroll tests =====
 
     #[test]
     fn none_both_zero() {
@@ -377,5 +477,171 @@ mod tests {
     #[test]
     fn edge_minimal_scrolled() {
         assert_eq!(selected_scroll(1, 1, Some(0)), 0..1);
+    }
+
+    // ===== Stateful scroll with direction tests =====
+
+    #[test]
+    fn stateful_initial_state_defaults_down() {
+        let state = ScrollState::new();
+        let (range, new_state) = selected_scroll_with_direction(10, 3, Some(0), state);
+        
+        // First call with no prior state should behave like normal scroll (down)
+        assert_eq!(range, 0..3);
+        assert_eq!(new_state.last_selected, Some(0));
+        assert_eq!(new_state.last_direction, Some(ScrollDirection::Down));
+    }
+
+    #[test]
+    fn scroll_state_advance_tracks_direction_changes() {
+        let state = ScrollState::new().advance(Some(4));
+        assert_eq!(state.last_selected, Some(4));
+        assert_eq!(state.last_direction, Some(ScrollDirection::Down));
+
+        let state = state.advance(Some(2));
+        assert_eq!(state.last_selected, Some(2));
+        assert_eq!(state.last_direction, Some(ScrollDirection::Up));
+    }
+
+    #[test]
+    fn stateful_scrolling_down() {
+        let state = ScrollState {
+            last_selected: Some(3),
+            last_direction: Some(ScrollDirection::Down),
+        };
+        
+        // Moving from index 3 to 5 (downward)
+        let (range, new_state) = selected_scroll_with_direction(10, 3, Some(5), state);
+        
+        // Should keep selection near bottom
+        assert_eq!(range, 3..6);
+        assert_eq!(new_state.last_selected, Some(5));
+        assert_eq!(new_state.last_direction, Some(ScrollDirection::Down));
+    }
+
+    #[test]
+    fn stateful_scrolling_up() {
+        let state = ScrollState {
+            last_selected: Some(5),
+            last_direction: Some(ScrollDirection::Down),
+        };
+        
+        // Moving from index 5 to 2 (upward)
+        let (range, new_state) = selected_scroll_with_direction(10, 3, Some(2), state);
+        
+        // Should keep selection near top of visible range
+        assert_eq!(range, 2..5);
+        assert_eq!(new_state.last_selected, Some(2));
+        assert_eq!(new_state.last_direction, Some(ScrollDirection::Up));
+    }
+
+    #[test]
+    fn stateful_rapid_down_scrolling() {
+        let items = 20;
+        let max_items = 5;
+        
+        let mut state = ScrollState::new();
+        
+        // Simulate rapid downward scrolling
+        for selected in &[0, 2, 4, 6, 8, 10] {
+            let (range, new_state) = selected_scroll_with_direction(items, max_items, Some(*selected), state);
+            assert_eq!(new_state.last_direction, Some(ScrollDirection::Down));
+            // Selection should be near the end of visible range
+            assert!(range.contains(selected));
+            state = new_state;
+        }
+        
+        // Final state should have tracked last position
+        assert_eq!(state.last_selected, Some(10));
+    }
+
+    #[test]
+    fn stateful_rapid_up_scrolling() {
+        let items = 20;
+        let max_items = 5;
+        
+        let mut state = ScrollState {
+            last_selected: Some(10),
+            last_direction: Some(ScrollDirection::Down),
+        };
+        
+        // Simulate rapid upward scrolling
+        for selected in &[8, 6, 4, 2, 0] {
+            let (range, new_state) = selected_scroll_with_direction(items, max_items, Some(*selected), state);
+            assert_eq!(new_state.last_direction, Some(ScrollDirection::Up));
+            // Selection should be within visible range
+            assert!(range.contains(selected));
+            state = new_state;
+        }
+        
+        // Final state should have tracked last position
+        assert_eq!(state.last_selected, Some(0));
+    }
+
+    #[test]
+    fn stateful_alternating_direction_changes() {
+        let items = 15;
+        let max_items = 3;
+        
+        let state = ScrollState::new();
+        
+        // Start at index 2
+        let (_range1, state) = selected_scroll_with_direction(items, max_items, Some(2), state);
+        assert_eq!(_range1, 0..3);
+        
+        // Move down to index 8
+        let (_range2, state) = selected_scroll_with_direction(items, max_items, Some(8), state);
+        assert_eq!(state.last_direction, Some(ScrollDirection::Down));
+        
+        // Move back up to index 4
+        let (range3, state) = selected_scroll_with_direction(items, max_items, Some(4), state);
+        assert_eq!(state.last_direction, Some(ScrollDirection::Up));
+        assert!(range3.contains(&4));
+        
+        // Move down again to index 10
+        let (_range4, state) = selected_scroll_with_direction(items, max_items, Some(10), state);
+        assert_eq!(state.last_direction, Some(ScrollDirection::Down));
+        assert_eq!(state.last_selected, Some(10));
+    }
+
+    #[test]
+    fn stateful_scroll_with_none_selection() {
+        let state = ScrollState {
+            last_selected: Some(5),
+            last_direction: Some(ScrollDirection::Down),
+        };
+        
+        // When selection is None, should show from start
+        let (range, new_state) = selected_scroll_with_direction(10, 3, None, state);
+        assert_eq!(range, 0..3);
+        assert_eq!(new_state.last_selected, None);
+    }
+
+    #[test]
+    fn stateful_scroll_edge_case_all_items_visible() {
+        let state = ScrollState::new();
+        
+        // When all items fit in view, direction shouldn't matter
+        let (range, _) = selected_scroll_with_direction(5, 10, Some(3), state);
+        assert_eq!(range, 0..5);
+    }
+
+    #[test]
+    fn stateful_scroll_maintains_boundaries() {
+        let items = 10;
+        let max_items = 3;
+        
+        let state = ScrollState {
+            last_selected: Some(7),
+            last_direction: Some(ScrollDirection::Down),
+        };
+        
+        // Moving to the very last item
+        let (range, _) = selected_scroll_with_direction(items, max_items, Some(9), state);
+        
+        // Should not exceed item boundaries
+        assert!(range.end <= items);
+        assert_eq!(range.len(), max_items);
+        assert!(range.contains(&9));
     }
 }
