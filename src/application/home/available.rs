@@ -7,7 +7,10 @@ use ratatui::{
 
 use crate::application::{
     theme::PATINA,
-    utils::{CowStr, Separator, WidgetList, selected_scroll_with_direction, ScrollState, strength_bars, strength_color},
+    utils::{
+        CowStr, ScrollState, Separator, WidgetList, selected_scroll_with_direction, strength_bars,
+        strength_color,
+    },
 };
 
 pub const ITEM_HEIGHT: u16 = 3;
@@ -35,7 +38,12 @@ impl Widget for AvailableList<'_> {
         Self: Sized,
     {
         let max_count = area.height.div_euclid(ITEM_HEIGHT);
-        let (range, _) = selected_scroll_with_direction(self.items.len(), max_count as _, self.selected, self.scroll_state);
+        let (range, _) = selected_scroll_with_direction(
+            self.items.len(),
+            max_count as _,
+            self.selected,
+            self.scroll_state,
+        );
         let len = range.len();
         let start = range.start;
 

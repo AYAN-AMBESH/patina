@@ -20,9 +20,9 @@ use crate::application::{
     },
     theme::PATINA,
     utils::{
-        selected_scroll_with_direction, CowStr, ScrollState,
+        CowStr,
         Either::{Left, Right},
-        Separator, WidgetList,
+        ScrollState, Separator, WidgetList, selected_scroll_with_direction,
     },
 };
 

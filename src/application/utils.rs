@@ -294,4 +294,3 @@ impl Widget for Separator {
         text.render(area, buf);
     }
 }
-
