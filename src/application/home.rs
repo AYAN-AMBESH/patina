@@ -415,23 +415,29 @@ impl HomeData {
     }
 
     fn sync_scroll_states(&mut self, connected_max_items: usize) {
-        let (_, connected_state) = selected_scroll_with_direction(
-            self.connected.list.len(),
-            connected_max_items,
-            self.selected.connected_selected(),
-            self.connected_scroll_state,
-        );
-        self.connected_scroll_state = connected_state;
+        match self.selected {
+            Selected::Connected(_) => {
+                let (_, connected_state) = selected_scroll_with_direction(
+                    self.connected.list.len(),
+                    connected_max_items,
+                    self.selected.connected_selected(),
+                    self.connected_scroll_state,
+                );
+                self.connected_scroll_state = connected_state;
+            }
+            Selected::Available(_) => {
+                let available_max_items = self.available_max_items.get().max(1);
 
-        let available_max_items = self.available_max_items.get().max(1);
-
-        let (_, available_state) = selected_scroll_with_direction(
-            self.available.list.len(),
-            available_max_items,
-            self.selected.available_selected(),
-            self.available_scroll_state,
-        );
-        self.available_scroll_state = available_state;
+                let (_, available_state) = selected_scroll_with_direction(
+                    self.available.list.len(),
+                    available_max_items,
+                    self.selected.available_selected(),
+                    self.available_scroll_state,
+                );
+                self.available_scroll_state = available_state;
+            }
+            Selected::None => {}
+        }
     }
 
     fn handle_tab_press(&mut self, max_items: usize) {

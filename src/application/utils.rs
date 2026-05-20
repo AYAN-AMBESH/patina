@@ -9,20 +9,11 @@ use ratatui::{
 
 use crate::application::theme::PATINA;
 
-/// Represents the direction of the last scroll action
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ScrollDirection {
-    Up,
-    Down,
-}
-
-/// Tracks scrolling state to differentiate between upward and downward scrolling
+/// Tracks scrolling state for viewport continuity.
 #[derive(Debug, Clone, Copy)]
 pub struct ScrollState {
     /// The last selected index before the current selection
     pub last_selected: Option<usize>,
-    /// The direction of the last scroll action
-    pub last_direction: Option<ScrollDirection>,
     /// The first index currently visible in the viewport
     pub window_start: usize,
 }
@@ -32,22 +23,7 @@ impl ScrollState {
     pub fn new() -> Self {
         Self {
             last_selected: None,
-            last_direction: None,
             window_start: 0,
-        }
-    }
-
-    pub fn advance(self, selected: Option<usize>) -> Self {
-        let direction = match (self.last_selected, selected) {
-            (Some(last), Some(current)) if current > last => ScrollDirection::Down,
-            (Some(last), Some(current)) if current < last => ScrollDirection::Up,
-            _ => self.last_direction.unwrap_or(ScrollDirection::Down),
-        };
-
-        Self {
-            last_selected: selected,
-            last_direction: Some(direction),
-            window_start: self.window_start,
         }
     }
 }
@@ -58,39 +34,14 @@ impl Default for ScrollState {
     }
 }
 
-/// Given a number of items, max number of items which can be shown, and a possibly selected index:
-/// returns the range of items that must be rendered
-pub fn selected_scroll(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
-    let Some(selected) = selected else {
-        let min = max_items.min(items);
-        return 0..min;
-    };
-
-    if items <= max_items || selected < max_items {
-        return 0..items.min(max_items);
-    }
-
-    let end = selected + 1;
-    let start = end - max_items;
-    start..end
-}
-
-/// Performs scrolling with awareness of scroll direction
-///
-/// This function tracks whether the user is scrolling up or down and applies
-/// the appropriate scrolling algorithm:
-/// - When scrolling **up**: keeps the selected item near the top of the visible range
-/// - When scrolling **down**: keeps the selected item near the bottom of the visible range
-///
-/// # Returns
-/// A tuple of (scroll_range, updated_state)
 pub fn selected_scroll_with_direction(
     items: usize,
     max_items: usize,
     selected: Option<usize>,
     state: ScrollState,
 ) -> (Range<usize>, ScrollState) {
-    let mut new_state = state.advance(selected);
+    let mut new_state = state;
+    new_state.last_selected = selected;
 
     let (range, start) =
         selected_scroll_with_anchor(items, max_items, selected, state.window_start);
