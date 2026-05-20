@@ -10,6 +10,8 @@ use crate::application::{
     utils::{CowStr, Separator, WidgetList, selected_scroll_with_direction, ScrollState, strength_bars, strength_color},
 };
 
+pub const ITEM_HEIGHT: u16 = 3;
+
 // TODO: remove this clone, only needed for testing
 #[derive(Clone)]
 pub struct AvailableAPDetails {
@@ -32,7 +34,6 @@ impl Widget for AvailableList<'_> {
     where
         Self: Sized,
     {
-        const ITEM_HEIGHT: u16 = 3;
         let max_count = area.height.div_euclid(ITEM_HEIGHT);
         let (range, _) = selected_scroll_with_direction(self.items.len(), max_count as _, self.selected, self.scroll_state);
         let len = range.len();
