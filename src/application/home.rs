@@ -413,20 +413,15 @@ impl HomeData {
     }
 
     fn sync_scroll_states(&mut self) {
-        // Directly update scroll states to track the current selection
-        // This ensures smooth scrolling behavior without double-processing
-        if let Some(idx) = self.selected.connected_selected() {
-            self.connected_scroll_state = ScrollState {
-                last_selected: Some(idx),
-                last_direction: self.connected_scroll_state.last_direction,
-            };
-        }
-        if let Some(idx) = self.selected.available_selected() {
-            self.available_scroll_state = ScrollState {
-                last_selected: Some(idx),
-                last_direction: self.available_scroll_state.last_direction,
-            };
-        }
+        // Advance from previous state so direction detection can compare
+        // old selection vs new selection on each keypress.
+        self.connected_scroll_state = self
+            .connected_scroll_state
+            .advance(self.selected.connected_selected());
+
+        self.available_scroll_state = self
+            .available_scroll_state
+            .advance(self.selected.available_selected());
     }
 
     fn handle_tab_press(&mut self) {

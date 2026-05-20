@@ -98,37 +98,37 @@ pub fn selected_scroll_with_direction(
     (range, new_state)
 }
 
-/// Scrolls with selection kept near the top when moving up
-fn selected_scroll_up(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
+fn selected_scroll_with_anchor(
+    items: usize,
+    max_items: usize,
+    selected: Option<usize>,
+    anchor_from_top: usize,
+) -> Range<usize> {
     let Some(selected) = selected else {
-        let min = max_items.min(items);
-        return 0..min;
+        return 0..max_items.min(items);
     };
 
     if items <= max_items {
         return 0..items;
     }
 
-    // Keep selected item at or near the top of the visible range
-    let end = (selected + max_items).min(items);
-    let start = end.saturating_sub(max_items);
-    start..end
+    let max_start = items - max_items;
+    let start = selected.saturating_sub(anchor_from_top).min(max_start);
+    start..(start + max_items)
+}
+
+/// Scrolls with selection kept near the top when moving up
+fn selected_scroll_up(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
+    // Keep selection at the top row while moving up.
+    let anchor_from_top = 0;
+    selected_scroll_with_anchor(items, max_items, selected, anchor_from_top)
 }
 
 /// Scrolls with selection kept near the bottom when moving down (original behavior)
 fn selected_scroll_down(items: usize, max_items: usize, selected: Option<usize>) -> Range<usize> {
-    let Some(selected) = selected else {
-        let min = max_items.min(items);
-        return 0..min;
-    };
-
-    if items <= max_items || selected < max_items {
-        return 0..items.min(max_items);
-    }
-
-    let end = selected + 1;
-    let start = end - max_items;
-    start..end
+    // Keep selection near the bottom area (last row).
+    let anchor_from_top = max_items.saturating_sub(1);
+    selected_scroll_with_anchor(items, max_items, selected, anchor_from_top)
 }
 
 pub type CowStr = Cow<'static, str>;
