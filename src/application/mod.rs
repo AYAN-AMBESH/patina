@@ -89,10 +89,11 @@ impl Application {
 
         let timer_tx = self.message_tx.clone();
         let interval = Duration::from_secs(1).div_f64(self.context.fps as _);
-        std::thread::spawn(move || {
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(interval);
             loop {
-                timer_tx.send(Message::GlobalTick).unwrap();
-                std::thread::sleep(interval);
+                ticker.tick().await;
+                let _ = timer_tx.send(Message::GlobalTick);
             }
         });
 

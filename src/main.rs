@@ -26,10 +26,11 @@ fn setup_logging(log_file: &PathBuf) -> anyhow::Result<()> {
         .append(true)
         .open(log_file)
         .context("Can't create log file")?;
+    let file = std::io::LineWriter::new(file);
     let file = Box::new(file);
     let env = env_logger::Env::new()
-        .filter("PATINA")
-        .write_style("PATINA_STYLE");
+        .filter_or("PATINA", "info")
+        .write_style_or("PATINA_STYLE", "never");
 
     env_logger::Builder::from_env(env)
         .target(env_logger::Target::Pipe(file))
@@ -49,6 +50,19 @@ fn main() -> anyhow::Result<()> {
         });
 
     setup_logging(&log_file)?;
+
+    let rt = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(4)
+        .thread_name("tokio-worker")
+        .enable_all()
+        .build()
+        .context("Failed to build tokio runtime")?;
+    let _guard = rt.enter();
+    log::info!(
+        "Main thread id={:?} name={:?}",
+        std::thread::current().id(),
+        std::thread::current().name()
+    );
 
     let context = AppContext {
         log_file,
