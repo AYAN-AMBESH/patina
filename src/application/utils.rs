@@ -137,7 +137,7 @@ impl<'a> BrailleSparkline<'a> {
         self.style = style;
         self
     }
-
+    #[allow(dead_code)]
     pub fn max(mut self, max: usize) -> Self {
         self.max = Some(max);
         self
